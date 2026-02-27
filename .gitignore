@@ -4,4 +4,4 @@
 *.log
 *.pth
 /yolov7
-git add
+/vUltralytics/runs
