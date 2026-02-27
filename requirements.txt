@@ -1,0 +1,7 @@
+torch>=2.0.0
+torchvision
+numpy>=2.0.0
+opencv-python
+PyYAML
+scipy
+tqdm
