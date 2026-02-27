@@ -1,0 +1,7 @@
+*.mp4
+*.pt
+/__pycache__/
+*.log
+*.pth
+/yolov7
+git add
