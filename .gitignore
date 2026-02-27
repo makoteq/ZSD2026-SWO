@@ -3,5 +3,5 @@
 /__pycache__/
 *.log
 *.pth
-/yolov7
+v7/yolov7
 /vUltralytics/runs
