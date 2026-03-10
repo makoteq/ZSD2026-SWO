@@ -5,3 +5,6 @@
 *.pth
 v7/yolov7
 /vUltralytics/runs
+model_training/runs/
+model_training/Car-Detection-Model-19/
+model_training/.env
