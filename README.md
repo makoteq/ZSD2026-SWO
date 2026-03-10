@@ -5,10 +5,12 @@ Celem projektu jest opracowanie systemu wczesnego ostrzegania na przejściu dla 
 
 ## Struktura Projektu
 Opis katalogów w repozytorium:
-### docs
-* **CARLA**
-* **YOLO**
-* **hardware**
+### ./docs
+* **CARLA** - dokumentacja konfiguracji symulatora
+* **YOLO** - dokumentacja zastosowania YOLO
+* **hardware** - dokumentacja zagadnień sprzętowych
+* **software** - dokumentacja zagadnień programistycznych
+* **misc** - inne
 
 ## Licencje i Prawa Autorskie
 Realizacja projektu wykorzystuje integrację komponentów open-source, przy czym wszystkie użyte narzędzia oraz zbiory danych są stosowane zgodnie z obowiązującymi dla nich warunkami licencyjnymi.
