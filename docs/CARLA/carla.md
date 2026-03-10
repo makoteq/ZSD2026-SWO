@@ -19,7 +19,7 @@ Możesz użyć dowolnego IDE (np. PyCharm, VS Code) lub pracować bezpośrednio 
 
 Utwórz wirtualne środowisko z **Python 3.12**.
 
-Przykład użycia PyCharm:
+Przykład użycia w PyCharm:
 
 Wybierz odpowiednią wersję Pythona podczas tworzenia nowego projektu,
 lub później przejdź do: <br>
@@ -33,9 +33,9 @@ Upewnij się, że środowisko jest aktywowane i że używasz właściwej wersji 
 
 W katalogu `CARLA_0.9.16` uruchom plik wykonywalny: `CarlaUE4.exe`.
 
-### Zależności i przykładowe skrypty
+### Dependencje i przykładowe skrypty
 
-Zainstaluj zależności i uruchamiaj pliki `.py` **podczas gdy symulator jest uruchomiony**:
+Zainstaluj dependencje i uruchamiaj pliki `.py` **podczas gdy symulator jest uruchomiony**:
 
 ```bash
 pip install numpy pygame carla opencv-python
