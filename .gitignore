@@ -9,3 +9,4 @@ model_training/runs/
 model_training/Car-Detection-Model-19/
 model_training/.env
 model_training/
+radar_reading/
