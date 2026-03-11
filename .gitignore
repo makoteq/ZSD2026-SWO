@@ -1,4 +1,5 @@
 *.mp4
+*.avi
 *.pt
 /__pycache__/
 *.log
@@ -10,3 +11,6 @@ model_training/Car-Detection-Model-19/
 model_training/.env
 model_training/
 radar_reading/
+model_training_v0/Car-Detection-Model-19/train/
+model_training_v0/Car-Detection-Model-19/test/
+model_training_v0/Car-Detection-Model-19/valid/
