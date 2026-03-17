@@ -1,0 +1,14 @@
+#MAREK
+1. Instalacja i Konfiguracja Środowiska
+Proces instalacji został zoptymalizowany pod kątem wydajności i jakości generowanego obrazu.
+
+Wersja: CARLA 0.9.16
+
+2. Wsparcie dla Zespołu "dev2": w celu przyspieszenia pracy z symulatorem udzieliłem odpowiednich instrukcji obsługi i konfiguracji symulatora
+
+3. Wygenerowanie testowego datasetu dla członka zespołu dev1 w celu walidacji algorytmu wykrywania przejść dla pieszych w warunkach: słonecznych, w nocy, w deszczu
+
+4. Obecnie trwają prace nad przygotowaniem mapy oraz algorytmu do automatyzacji nagrywania zdarzeń niebezpiecznych. 
+  Plik ze wstępną wersją: "test_automation". Generuje dwa samochody na sąsiednich pasach, jadące w stronę kamery. 
+  Po przekroczeniu ustalonego punktu (przejścia dla pieszych) samochody są usuwane oraz generowane jeszcze raz.
+  Początkowo oba pojazdy jadą z prędkością 50km/h. Po każdym ponownym wygenerowaniu prędkość jednego z nich zwiększa się o 1km/h
