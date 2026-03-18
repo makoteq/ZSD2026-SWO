@@ -4,3 +4,5 @@ opencv-python
 PyYAML
 scipy
 tqdm
+sahi
+supervision
