@@ -12,3 +12,4 @@ model_training/v1/.env
 model_training_v0/Car-Detection-Model-19/train/
 model_training_v0/Car-Detection-Model-19/test/
 model_training_v0/Car-Detection-Model-19/valid/
+/data/
