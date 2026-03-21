@@ -1,7 +1,7 @@
 from ultralytics import YOLO
 import time
 
-model = YOLO('yolo26n_full_integer_quant.tflite', task='detect')  
+model = YOLO('yolo26n_full_integer_quant_edgetpu.tflite', task='detect')  
 
 source_img = 'https://ultralytics.com/images/bus.jpg'
 
