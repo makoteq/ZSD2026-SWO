@@ -1,3 +1,10 @@
+import sys
+try:
+    from tflite_runtime import interpreter as tflite
+    sys.modules['tensorflow'] = tflite # This tricks Ultralytics
+except ImportError:
+    pass
+
 from ultralytics import YOLO
 
 # Load a model
