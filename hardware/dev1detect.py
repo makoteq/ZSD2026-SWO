@@ -9,13 +9,10 @@ print(f"Ultralytics version: {ultralytics.__version__}")
 print(f"Torch version: {torch.__version__}")
 print(f"CUDA available: {torch.cuda.is_available()}")
  
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-if device == 'cuda':
-    print(f"CUDA device: {torch.cuda.get_device_name(0)}")
  
 print(f"Using device: {device}")
  
-model = YOLO('yolo26n.pt')
+model = YOLO('240_yolov8n_full_integer_quant_edgetpu.tflite')
 
 video_path = r"traffic.mp4"
 cap = cv2.VideoCapture(video_path)
@@ -44,7 +41,7 @@ try:
             conf=0.1, 
             persist=True,  
             verbose=False, 
-            device=0 if device == 'cuda' else 'cpu'
+            device="tpu:0"
         )
  
         annotated_frame = results[0].plot()
