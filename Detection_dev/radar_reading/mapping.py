@@ -21,8 +21,8 @@ CAMERA_HEIGHT_OFFSET: float = 6.0
 
 MASK_Z_MIN: float = 0.0
 MASK_Z_MAX: float = 1.0
-MASK_Y_MIN: float = 80.0
-MASK_Y_MAX: float = 100.0
+MASK_Y_MIN: float = 00.0
+MASK_Y_MAX: float = 200.0
 
 GRID_RES: float = 0.1
 STREET_Z_THRESHOLD: float = 0.5
