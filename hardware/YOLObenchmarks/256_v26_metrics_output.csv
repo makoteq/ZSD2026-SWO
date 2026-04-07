@@ -1,0 +1,2 @@
+frame,img_size,preprocess_ms,inference_ms,postprocess_ms,total_latency_ms,real_fps,num_detections,avg_confidence
+0,256,383.3,1205.23,383.19,1971.72,0.01,19,0.455
