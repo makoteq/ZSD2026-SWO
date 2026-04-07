@@ -118,3 +118,24 @@ Integracja komponentów i testy końcowe.
 4. Działający model uruchomiony na platformie docelowej przy dostarczonych plikach z RADARU i kamery.
 5. Lista najlepszych konfiguracji sprzętowych niezależnie od budżetu.
 6. Demonstracja działającego systemu (nagranie) wraz z pokazanym zużyciem zasobów sprzętowych.
+
+# Ogólne założenia projektu 
+1. Strefa prędkości maksymalnie 50 km/h
+2. Inie na drorze muszą być widoczne, białe i poziome
+3. Droga jest zawsze prosta
+4. Maksymalna fizyczna prędkość zależy od widocznego odcinka drogi
+5. Odległość „bezpośrednio przed” przejściem dla pieszych definiujemy jako 15 metrów
+6. Nie ma autofocus, cały obraz w ostrości
+7. Kąt patrzenia kamery jest ten sam
+8. Warunki pogodowe: możliwe opady, bez lodu, mgły lub gołoledzi na drodze
+9. Na drodze lub poboczu nie występują obiekty ograniczające widoczność
+10. Brak budynków przy drodze, brak obiektów wiszących nad drogą
+11. Samochód musi jechać po drodze, przodem w stronę kamery
+12. Widoczny odcinek drogi co najmniej 200 m
+13. Odcinek drogi to droga prosta, jednokierunkowa, jedno lub dwu pasmowa
+14. Przejście dla pieszych bez sygnalizacji świetlnej
+15. Wyprzedzanie (przejeżdżanie obok pojazdu poruszającego się w tym samym kierunku) odbywa się dla dwóch samochodów, wyprzedzającego i wyprzedzanego
+16. Interpretujemy tor jazdy jako pas ruchu wyznaczony znakami poziomymi
+17. Istnienie znaków poziomych
+18. System ostrzegawczy to sygnał dźwiękowy lub świetlny, składający się z jednej kamery monitorującej umieszczonej bezpośrednio nad przejściem dla pieszych
+19. System może się składać z większej ilości kamer w przypadku wykrycia potrzeby podczas procesu developmentu

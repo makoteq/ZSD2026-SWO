@@ -1,0 +1,17 @@
+*.mp4
+*.avi
+*.pt
+/__pycache__/
+*.log
+*.pth
+v7/yolov7
+Detection_dev/car_detection/runs
+model_training/v1/runs/
+model_training/v1/Car-Detection-Model-19/
+model_training/v1/.env
+model_training_v0/Car-Detection-Model-19/train/
+model_training_v0/Car-Detection-Model-19/test/
+model_training_v0/Car-Detection-Model-19/valid/
+data/
+Detection_dev/v7
+.github/
