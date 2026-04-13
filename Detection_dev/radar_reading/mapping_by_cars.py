@@ -22,7 +22,8 @@ MASK_Y_MIN = 0.0
 MASK_Y_MAX = 120.0
 
 CORNER_OFFSET = 0.3
-NOISE_MAX_DISTANCE = 10
+AZIMUTH_ERROR_DEG = 0.25
+RANGE_ERROR_M = 0.5
 
 POINT_SIZE = 2
 OPACITY_LEVEL = 0.5
@@ -37,13 +38,6 @@ INTERPOLATION_FACTOR = 2
 
 Z_AXIS_LIMIT_MIN = 0
 Z_AXIS_LIMIT_MAX = 5
-
-HISTOGRAM_BINS = 50
-HIST_COLOR = "salmon"
-HIST_EDGE_COLOR = "black"
-HIST_TITLE = "Histogram of Points along X-axis"
-HIST_LABEL_X = "Width (X)"
-HIST_LABEL_COUNT = "Number of Points"
 
 CORNER_PLOT_TITLE = "2D Projection of Road Lines"
 LINE_COLOR = "red"
@@ -63,28 +57,29 @@ class Street:
             raise FileNotFoundError(f"File not found: {self.csvPath}")
         self.dataFrame = pd.read_csv(self.csvPath)
 
-    def addNoise(self, maxStep: float) -> None:
+    def addNoise(self) -> None:
         if self.dataFrame.empty:
             return
 
         x = self.dataFrame[COLUMN_X].values
         y = self.dataFrame[COLUMN_Y].values
-        z = self.dataFrame[COLUMN_Z].values
-
-        norms = np.sqrt(x**2 + y**2 + z**2)
         
-        # Unikamy dzielenia przez zero dla punktu (0,0,0)
+        # 1. Błąd azymutu (rotacja o losowy kąt w stopniach)
+        anglesRad = np.radians(np.random.uniform(-AZIMUTH_ERROR_DEG, AZIMUTH_ERROR_DEG, size=len(x)))
+        cosA = np.cos(anglesRad)
+        sinA = np.sin(anglesRad)
+        
+        newX = x * cosA - y * sinA
+        newY = x * sinA + y * cosA
+
+        # 2. Błąd odległości (skok wzdłuż wektora patrzenia)
+        rangeNoise = np.random.uniform(-RANGE_ERROR_M, RANGE_ERROR_M, size=len(x))
+        norms = np.sqrt(newX**2 + newY**2)
         norms[norms == 0] = 1.0
-
-        dirX = x / norms
-        dirY = y / norms
-        dirZ = z / norms
-
-        noiseSteps = np.random.uniform(-maxStep, maxStep, size=len(self.dataFrame))
-
-        self.dataFrame[COLUMN_X] += dirX * noiseSteps
-        self.dataFrame[COLUMN_Y] += dirY * noiseSteps
-        self.dataFrame[COLUMN_Z] += dirZ * noiseSteps
+        
+        self.dataFrame[COLUMN_X] = newX + (newX / norms) * rangeNoise
+        self.dataFrame[COLUMN_Y] = newY + (newY / norms) * rangeNoise
+        self.dataFrame[COLUMN_Z] += np.random.uniform(-0.1, 0.1, size=len(x))
 
     def calculateRoll(self, closeWindow: float = 20.0, farWindow: float = 20.0, numLowest: int = 10) -> float:
         if self.dataFrame.empty:
@@ -164,8 +159,6 @@ class Street:
         
         plt.scatter(self.dataFrame[X_COLUMN], self.dataFrame[Y_COLUMN], alpha=0.1, s=1)
         plt.title(CORNER_PLOT_TITLE)
-        plt.xlabel(HIST_LABEL_X)
-        plt.ylabel("Distance (Y)")
         plt.legend()
         plt.grid(True)
         plt.show()
@@ -203,7 +196,6 @@ class Street:
                 name=name
             ))
 
-        fig.update_traces(marker=dict(size=POINT_SIZE))
         fig.update_layout(
             scene=dict(aspectmode="data", zaxis=dict(range=[Z_AXIS_LIMIT_MIN, Z_AXIS_LIMIT_MAX])),
             margin=dict(l=0, r=0, b=0, t=40)
@@ -212,7 +204,7 @@ class Street:
 
 if __name__ == "__main__":
     streetInstance = Street(RELATIVE_CSV_PATH)
-    streetInstance.addNoise(NOISE_MAX_DISTANCE)
+    streetInstance.addNoise()
     streetInstance.adjustPoints(SENSOR_PITCH_DEG, SENSOR_YAW_DEG, SENSOR_ROLL_DEG, CAMERA_HEIGHT_OFFSET)
     streetInstance.applyMask(MASK_Z_MIN, MASK_Z_MAX, MASK_Y_MIN, MASK_Y_MAX)
     streetInstance.interpolateCloud(INTERPOLATION_FACTOR)
