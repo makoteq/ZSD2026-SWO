@@ -1,0 +1,71 @@
+<?xml version='1.0' encoding='utf-8'?>
+<OpenDRIVE>
+    <header name="blender_dsc" revMajor="1" revMinor="5" date="2026-03-19 12:46:29.148561" north="0.0" south="0.0" east="0.0" west="0.0"/>
+    <road rule="RHT" id="1" junction="-1" length="200.00">
+        <link/>
+        <planView>
+            <geometry s="0" x="0.0" y="0.0" hdg="0.0" length="200.00">
+                <line/>
+            </geometry>
+        </planView>
+        <elevationProfile>
+            <elevation s="0" a="0.0" b="0" c="0" d="0"/>
+        </elevationProfile>
+        <lateralProfile/>
+        <lanes>
+            <laneOffset s="0" a="0.0" b="0.0" c="0.0" d="-0.0"/>
+            <laneSection s="0">
+                <left>
+                    <lane id="2" type="border" level="false">
+                        <link/>
+                        <width a="0.20" b="0.0" c="0.0" d="0.0" sOffset="0"/>
+                        <roadMark sOffset="0" type="none" weight="standard" color="standard"/>
+                    </lane>
+                    <lane id="1" type="driving" level="false">
+                        <link/>
+                        <width a="3.5" b="0.0" c="0.0" d="0.0" sOffset="0"/>
+                        <roadMark sOffset="0" type="solid" weight="standard" color="white"/>
+                    </lane>
+                </left>
+                <center>
+                    <lane id="0" type="none" level="false">
+                        <roadMark sOffset="0" type="broken" weight="standard" color="white"/>
+                    </lane>
+                </center>
+                <right>
+                    <lane id="-1" type="driving" level="false">
+                        <link/>
+                        <width a="3.5" b="0.0" c="0.0" d="0.0" sOffset="0"/>
+                        <roadMark sOffset="0" type="solid" weight="standard" color="white"/>
+                    </lane>
+                    <lane id="-2" type="border" level="false">
+                        <link/>
+                        <width a="0.20" b="0.0" c="0.0" d="0.0" sOffset="0"/>
+                        <roadMark sOffset="0" type="none" weight="standard" color="standard"/>
+                    </lane>
+                </right>
+            </laneSection>
+        </lanes>
+        <objects>
+            <object type="crosswalk" name="crosswalk_1" id="1"
+                    s="5.0" t="0.0" zOffset="0.0"
+                    orientation="none"
+                    length="4.0" width="7.4"
+                    hdg="0" pitch="0" roll="0">
+                <validity fromLane="-1" toLane="1"/>
+            </object>
+        </objects>
+        <signals>
+            <signal s="3.0" t="-4.5" id="101" name="pedestrian_crossing_sign"
+                    dynamic="no" orientation="+"
+                    zOffset="3.0" type="293" subtype="-1"
+                    value="-1" unit="" width="0.6" height="0.9"
+                    hOffset="0" pitch="0" roll="0" country="OpenDRIVE"/>
+            <signal s="3.0" t="4.5" id="102" name="pedestrian_crossing_sign"
+                    dynamic="no" orientation="-"
+                    zOffset="3.0" type="293" subtype="-1"
+                    value="-1" unit="" width="0.6" height="0.9"
+                    hOffset="0" pitch="0" roll="0" country="OpenDRIVE"/>
+        </signals>
+    </road>
+</OpenDRIVE>
