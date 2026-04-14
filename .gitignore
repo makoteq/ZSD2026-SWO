@@ -15,3 +15,5 @@ model_training_v0/Car-Detection-Model-19/valid/
 data/
 Detection_dev/v7
 .github/
+*/__pycache__/
+*.log

@@ -17,11 +17,12 @@ SENSOR_ROLL_DEG = 0.0
 CAMERA_HEIGHT_OFFSET = 6.0
 
 MASK_Z_MIN = 30.0
-MASK_Z_MAX = 50
+MASK_Z_MAX = 50.0
 MASK_Y_MIN = 0.0
 MASK_Y_MAX = 120.0
 
 CORNER_OFFSET = 0.3
+
 AZIMUTH_ERROR_DEG = 0.25
 RANGE_ERROR_M = 0.5
 
@@ -64,7 +65,7 @@ class Street:
         x = self.dataFrame[COLUMN_X].values
         y = self.dataFrame[COLUMN_Y].values
         
-        # 1. Błąd azymutu (rotacja o losowy kąt w stopniach)
+
         anglesRad = np.radians(np.random.uniform(-AZIMUTH_ERROR_DEG, AZIMUTH_ERROR_DEG, size=len(x)))
         cosA = np.cos(anglesRad)
         sinA = np.sin(anglesRad)
@@ -72,7 +73,7 @@ class Street:
         newX = x * cosA - y * sinA
         newY = x * sinA + y * cosA
 
-        # 2. Błąd odległości (skok wzdłuż wektora patrzenia)
+
         rangeNoise = np.random.uniform(-RANGE_ERROR_M, RANGE_ERROR_M, size=len(x))
         norms = np.sqrt(newX**2 + newY**2)
         norms[norms == 0] = 1.0
