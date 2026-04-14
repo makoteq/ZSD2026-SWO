@@ -5,11 +5,12 @@ import plotly.express as px
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
 
-RELATIVE_CSV_PATH = "..\\..\\data\\Radary_Batch\\TRUGRD_LR_like\\scenario_lane_change\\radar_points_world.csv"
+RELATIVE_CSV_PATH = "..\\..\\data\\normal_traffic\\radar_points_world.csv"
 COLUMN_X = "x_sensor"
 COLUMN_Y = "y_sensor"
 COLUMN_Z = "z_sensor"
 COLUMN_VELOCITY = "radial_velocity"
+COLUMN_TIME = "timestamp"
 
 SENSOR_PITCH_DEG = 0.0
 SENSOR_YAW_DEG = 0.0
@@ -49,6 +50,8 @@ LINE_WIDTH_VIS = 3
 class Street:
     def __init__(self, relativePath: str) -> None:
         self.relativePath = relativePath
+        self.currentTime = 0.0
+        self.pointsSwap = pd.DataFrame()
         self.loadData()
 
     def loadData(self) -> None:
@@ -58,6 +61,15 @@ class Street:
             raise FileNotFoundError(f"File not found: {self.csvPath}")
         self.dataFrame = pd.read_csv(self.csvPath)
 
+    def step(self, timeStep: float) -> None:
+        self.pointsSwap = pd.DataFrame()
+        
+        endTime = self.currentTime + timeStep
+        mask = (self.dataFrame[COLUMN_TIME] >= self.currentTime) & (self.dataFrame[COLUMN_TIME] < endTime)
+        
+        self.pointsSwap = self.dataFrame[mask].copy()
+        self.currentTime += timeStep
+
     def addNoise(self) -> None:
         if self.dataFrame.empty:
             return
@@ -65,14 +77,12 @@ class Street:
         x = self.dataFrame[COLUMN_X].values
         y = self.dataFrame[COLUMN_Y].values
         
-
         anglesRad = np.radians(np.random.uniform(-AZIMUTH_ERROR_DEG, AZIMUTH_ERROR_DEG, size=len(x)))
         cosA = np.cos(anglesRad)
         sinA = np.sin(anglesRad)
         
         newX = x * cosA - y * sinA
         newY = x * sinA + y * cosA
-
 
         rangeNoise = np.random.uniform(-RANGE_ERROR_M, RANGE_ERROR_M, size=len(x))
         norms = np.sqrt(newX**2 + newY**2)
@@ -211,3 +221,4 @@ if __name__ == "__main__":
     streetInstance.interpolateCloud(INTERPOLATION_FACTOR)
     streetInstance.plotCornerProjection()
     streetInstance.visualize()
+    streetInstance.step(0.3)

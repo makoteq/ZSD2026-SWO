@@ -15,7 +15,7 @@ from typing import Tuple, List, Dict, Any
 
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "../..", "data"))
-VIDEO_PATH = os.path.join(DATA_DIR, "Batch 3\\scenario_speeding\\run_004\\rgb.mp4")
+VIDEO_PATH = os.path.join(DATA_DIR, "normal_traffic\\rgb.mp4")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 CNN_MODEL_PATH = os.path.join(DATA_DIR, "models", "cnn.h5")
 OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
