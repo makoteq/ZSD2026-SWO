@@ -60,14 +60,73 @@ WEATHER_PRESETS = {
     'HardRainSunset': carla.WeatherParameters.HardRainSunset,
     'SoftRainNoon': carla.WeatherParameters.SoftRainNoon,
     'SoftRainSunset': carla.WeatherParameters.SoftRainSunset,
-    #'ClearNight': carla.WeatherParameters.ClearNight,
-    #'CloudyNight': carla.WeatherParameters.CloudyNight,
-    #'WetNight': carla.WeatherParameters.WetNight,
-    #'SoftRainNight': carla.WeatherParameters.SoftRainNight,
-    #'MidRainyNight': carla.WeatherParameters.MidRainyNight,
-    #'HardRainNight': carla.WeatherParameters.HardRainNight,
+    'ClearNight': carla.WeatherParameters.ClearNight,
+    'CloudyNight': carla.WeatherParameters.CloudyNight,
+    'WetNight': carla.WeatherParameters.WetNight,
+    'SoftRainNight': carla.WeatherParameters.SoftRainNight,
+    'MidRainyNight': carla.WeatherParameters.MidRainyNight,
+    'HardRainNight': carla.WeatherParameters.HardRainNight
 }
 
+VEHICLES_WITH_LIGHTS = {
+    "vehicle.dodge.charger_2020",
+    "vehicle.dodge.charger_police_2020",
+    "vehicle.ford.crown",
+    "vehicle.lincoln.mkz_2020",
+    "vehicle.mercedes.coupe_2020",
+    "vehicle.mini.cooper_s_2021",
+    "vehicle.nissan.patrol_2021",
+    "vehicle.carlamotors.firetruck",
+    "vehicle.ford.ambulance",
+    "vehicle.mercedes.sprinter",
+    "vehicle.volkswagen.t2_2021",
+    "vehicle.mitsubishi.fusorosa"
+}
+
+G = 9.81
+
+FRICTION_MAP = {
+    "ClearNoon": 0.95,
+    "ClearSunset": 0.95,
+    "CloudyNoon": 0.90,
+    "CloudySunset": 0.90,
+
+    "WetNoon": 0.75,
+    "WetSunset": 0.75,
+
+    "SoftRainNoon": 0.70,
+    "SoftRainSunset": 0.70,
+
+    "WetNight": 0.65,
+    "SoftRainNight": 0.65,
+
+    "MidRainyNoon": 0.60,
+    "MidRainSunset": 0.60,
+    "MidRainyNight": 0.55,
+
+    "HardRainNoon": 0.55,
+    "HardRainSunset": 0.55,
+    "HardRainNight": 0.50,
+
+    "ClearNight": 0.90,
+    "CloudyNight": 0.85
+}
+
+def get_mu(weather):
+    return FRICTION_MAP.get(weather, 0.7)
+
+def mass_factor(mass):
+    if mass < 1300:
+        return 1.00
+    elif mass < 1700:
+        return 0.98
+    elif mass < 2200:
+        return 0.95
+    else:
+        return 0.90
+
+def compute_k(mu):
+    return 1 / (2 * mu * G)
 
 def get_split_dir():
     """Split data to train/test/val - randomly assign an image with 70%/15%/15% proportions
@@ -171,14 +230,14 @@ def spawn_cameras(world, blueprint_library):
     camera_bp.enable_postprocess_effects = False
 
     base_x = 393.5
-    base_y = 270.0
+    base_y = 65.0
     base_z = 6.0
 
     transforms = []
 
-    # Base camera (unchanged)
+    # Base camera (100 m, centered)
     transforms.append(carla.Transform(
-        carla.Location(x=base_x, y=base_y, z=base_z),
+        carla.Location(x=base_x, y=base_y + 100, z=base_z),
         carla.Rotation(
             pitch=-5.0 + random.uniform(-3.0, 3.0),
             yaw=270.0 + random.uniform(-2.0, 2.0)
@@ -187,7 +246,7 @@ def spawn_cameras(world, blueprint_library):
 
     # Close (40m)
     transforms.append(carla.Transform(
-        carla.Location(x=base_x, y=base_y - 40.0, z=base_z),
+        carla.Location(x=base_x, y=base_y + 40.0, z=base_z),
         carla.Rotation(
             pitch=-5.0 + random.uniform(-3.0, 3.0),
             yaw=270.0 + random.uniform(-2.0, 2.0)
@@ -196,25 +255,25 @@ def spawn_cameras(world, blueprint_library):
 
     # Far (200m)
     transforms.append(carla.Transform(
-        carla.Location(x=base_x, y=base_y - 200.0, z=base_z),
+        carla.Location(x=base_x, y=base_y + 200.0, z=base_z),
         carla.Rotation(
             pitch=-5.0 + random.uniform(-3.0, 3.0),
             yaw=270.0 + random.uniform(-2.0, 2.0)
         )
     ))
 
-    # 100m left offset
+    # 120m left offset
     transforms.append(carla.Transform(
-        carla.Location(x=base_x - 4.0, y=base_y - 100.0, z=base_z),
+        carla.Location(x=base_x - 4.0, y=base_y + 120.0, z=base_z),
         carla.Rotation(
             pitch=-5.0 + random.uniform(-3.0, 3.0),
             yaw=270.0 + random.uniform(-2.0, 2.0)
         )
     ))
 
-    # 100m right offset
+    # 80m right offset
     transforms.append(carla.Transform(
-        carla.Location(x=base_x + 4.0, y=base_y - 100.0, z=base_z),
+        carla.Location(x=base_x + 4.0, y=base_y + 80.0, z=base_z),
         carla.Rotation(
             pitch=-5.0 + random.uniform(-3.0, 3.0),
             yaw=270.0 + random.uniform(-2.0, 2.0)
@@ -310,22 +369,23 @@ def main():
                 frames_collected = 0
                 attempts = 0
 
+                has_lights = True
+
                 # Turn on vehicle lights (position + low beam) if supported
-                has_lights = False
-
-                try:
-                    vehicle.set_light_state(
-                        carla.VehicleLightState(
-                            carla.VehicleLightState.Position |
-                            carla.VehicleLightState.LowBeam
+                if bp.id in VEHICLES_WITH_LIGHTS:
+                    try:
+                        vehicle.set_light_state(
+                            carla.VehicleLightState(
+                                carla.VehicleLightState.Position |
+                                carla.VehicleLightState.LowBeam
+                            )
                         )
-                    )
-                    state = vehicle.get_light_state()
-                    if state != carla.VehicleLightState.NONE:
-                        has_lights = True
-
-                except:
+                    except Exception as e:
+                        print(e)
+                else:
                     has_lights = False
+
+                skipped = False
 
                 # Skip vehicles without lights in difficult night/weather conditions
                 restricted_conditions = [
@@ -334,17 +394,26 @@ def main():
                     'SoftRainNight',
                     'HardRainNoon',
                     'HardRainSunset',
+                    'HardRainNight',
                 ]
 
-                if (weather_name in restricted_conditions) and (not has_lights):
+                if (weather_name in restricted_conditions) and (has_lights == False):
+                    skipped = True
                     for cam in cameras:
                         cam.stop()
-                        cam.destroy()
-                    vehicle.destroy()
+
+                    world.tick()
+                    for cam in cameras:
+                        if cam.is_alive:
+                            cam.destroy()
+                    if vehicle.is_alive:
+                        vehicle.destroy()
+                    time.sleep(0.1)
+                    world.tick()
                     continue
 
                 # Collect frames until we reach FRAMES_PER_VEHICLE threshold or a timeout
-                while frames_collected < FRAMES_PER_VEHICLE and attempts < MAX_ATTEMPTS:
+                while frames_collected < FRAMES_PER_VEHICLE and attempts < MAX_ATTEMPTS and not skipped:
 
                     world.tick()
 
@@ -417,14 +486,27 @@ def main():
                             }
 
                             # Save metadata
+                            mass = physics.mass
+                            mu = get_mu(weather_name)
+                            mf = mass_factor(mass)
+                            mu_corr = mu * mf
+                            k = compute_k(mu_corr)
+
                             json.dump({
                                 "type_id": bp.id,
                                 "weather": weather_name,
-                                "camera_id": cam_id,
                                 "vehicle_type": vehicle_type,
                                 "physics": physics_dict,
                                 "distance_approx": abs(
-                                    cam.get_transform().location.y - vehicle.get_transform().location.y)
+                                    cam.get_transform().location.y - vehicle.get_transform().location.y
+                                ),
+                                "physics_label": {
+                                    "mu": round(mu, 4),
+                                    "mass_factor": round(mf, 4),
+                                    "mu_corrected": round(mu_corr, 4),
+                                    "k": round(k, 6)
+                                }
+
                             }, f, indent=2)
 
                         frames_collected += 1
@@ -436,11 +518,12 @@ def main():
                     attempts += 1
 
                 # Clean up
-                for cam in cameras:
-                    cam.stop()
-                    cam.destroy()
+                if not skipped:
+                    for cam in cameras:
+                        cam.stop()
+                        cam.destroy()
 
-                vehicle.destroy()
+                    vehicle.destroy()
 
     except KeyboardInterrupt:
         # Handle user interrupt exit

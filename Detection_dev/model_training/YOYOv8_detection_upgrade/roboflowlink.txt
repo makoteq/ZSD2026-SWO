@@ -1,3 +1,0 @@
-This is URL to data set created witk Carla in Roboflow
-
-https://universe.roboflow.com/mareks-workspace-entpb/carla-osobowki-przejscie/dataset/1

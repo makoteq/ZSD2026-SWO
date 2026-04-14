@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-RELATIVE_CSV_PATH = "../../data\\batch2\\batch2\\scenario1_speeding_2cars\\run_007\\radar_points_world.csv"
+RELATIVE_CSV_PATH = "..\\..\\data\\Radary_Batch\\UMRR11_like\\scenario_lane_change\\radar_points_world.csv"
 COLUMN_X = "x_sensor"
 COLUMN_Y = "y_sensor"
 COLUMN_Z = "z_sensor"
@@ -17,8 +17,8 @@ SENSOR_ROLL_DEG = 0.0
 CAMERA_HEIGHT_OFFSET = 6.0
 
 MASK_Z_MIN = 0.15
-MASK_Z_MAX = 5.0
-MASK_Y_MIN = 70.0
+MASK_Z_MAX = 50
+MASK_Y_MIN = 0.0
 MASK_Y_MAX = 120.0
 
 INTERPOLATION_FACTOR = 2
