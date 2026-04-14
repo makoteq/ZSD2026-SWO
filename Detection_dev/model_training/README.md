@@ -1,25 +1,20 @@
 # VEHICLE DETECTION AND CLASSIFICATION PIPELINE
 
-## WHAT DOES MAIN.PY
+## MAIN.PY
 
-Detects and tracks vehicles in a video using a custom YOLO model (`best.pt`),  
+Detects and tracks vehicles in the input video from `content/traffic.mp4` video using a custom YOLO model (`best.pt`),  
 classifies each vehicle type (coupe, hatchback, sedan, suv, truck, van) using a CNN model,  
-and draws bounding boxes, labels and trajectories on the output video.
+and draws bounding boxes, labels and trajectories on the output video.  
+Writes the annotated output video to `content/trajectory.mp4`,  
+Optionally Saves a notebook with vehicle crops to `content/cars_output.ipynb`.
 
-Each detected vehicle is stored as a **Car object** with:
-- **type**: vehicle category from CNN  
-- **k**: CNN-predicted deceleration coefficient (k = 1 / (2 * mu * g))  
-- **breakingDistance**: estimated braking distance (d = v^2 * k), updated every frame  
-- **speed**: placeholder, **NOT YET IMPLEMENTED** - **history**: list of (x, y) positions across frames, used to draw trajectory  
-- **lastCrop**: best crop of the vehicle (taken at highest YOLO confidence)  
-- **maxConfidence**: highest YOLO detection confidence seen for this vehicle  
+Access to model:
+https://drive.google.com/drive/folders/1JhdJ7mt9RcEYkpEYt98uyG6I3Pz76pQ5?usp=sharing
 
-CNN is only called when YOLO confidence exceeds the previous best for that vehicle,  
-so the classification is always based on the clearest view.
 
 ---
 
-## REQUIREMENTS
+### REQUIREMENTS
 
 Python **3.12** is required — `tensorflow 2.16.1` does not support newer versions.
 
@@ -37,7 +32,7 @@ pip install nbformat
 
 ---
 
-## STRUCTURE
+### STRUCTURE
 
 ```text
 ../  
@@ -48,48 +43,48 @@ pip install nbformat
         traffic.mp4                             <- input video to process
 ```
 
-The `content/` folder must be created manually and the model files and video placed inside.
-
-The script will:
-1. Load YOLO and CNN models from `content/`
-2. Open the input video from `content/traffic.mp4`
-3. Process every frame - detect, track and classify vehicles
-4. Write the annotated output video to `content/trajectory.mp4`
-5. Save a notebook with vehicle crops to `content/cars_output.ipynb`, optional
 
 ---
 
-## OUTPUT
+## YOLO_training FOLDER
 
-Both files appear in `content/` after the script finishes:
+### main.ipynb
 
-### trajectory.mp4
-Annotated video with bounding boxes, vehicle type, track ID and trajectory lines.
+Script for testing a trained on a custom dataset YOLOv8 model on video data with live visualization of detections.
 
-### cars_output.ipynb
-Jupyter notebook - one cell per detected vehicle showing its crop image, type, YOLO confidence and k value. Open in Jupyter or VSCode to view. This can be removed from the script if not needed (see save_notebook call at end of main).
+### training_carla.ibynb
 
----
+Training script for YOLOv8 model on custom CARLA dataset.  
+Uses Roboflow to access prepared and annotated data. Link to access dataset is given below:  
+https://app.roboflow.com/mareks-workspace-entpb/carla-osobowki-przejscie/4
 
-## CONFIGURATION
 
-All parameters are at the top of `tracking.py` under the CONFIGURATION section:
+## vehicle_classification_CNN FOLDER
 
-```text
-  VIDEO_PATH          - path to input video
-  START_TIME          - start time in seconds (skips the beginning of the video)
-  CONF_THRESHOLD      - minimum YOLO detection confidence (default 0.5)
-  IMGSZ               - YOLO input image size, 416 or 800 depending on best.pt
-  MAX_MISSING_FRAMES  - how many frames a vehicle can be unseen before being removed
-                        set to float('inf') to never remove vehicles from tracking
-  TRACK_COLOR         - trajectory line color (BGR)
-  BBOX_COLOR          - bounding box color (BGR)
-```
+### dataset.py 
 
----
+XXX
 
-## KNOWN LIMITATIONS / TODO
+### main.ipynb
 
-- speed is not implemented yet, breakingDistance will always be 0.0 until then
-- CNN is trained on CARLA synthetic data, real-world accuracy may vary
-- k value is taken from the best confidence frame only, not averaged over time
+XXX
+
+## metrics FOLDER
+
+### metrics.ipynb
+
+Compares two models and collects performance metrics,  runs tracking on multiple video segments and evaluates performance across different weather conditions.  
+Shows for each model and segment: FPS, inference time, object detections per frame, confidences, number of captured cars during tracking. 
+
+### precision_recall_evaluation.ipynb 
+
+This script manually evaluates YOLOv8 models on a labeled dataset by comparing predictions with ground truth annotations.
+It calculates Precision and Recall for a selected class using IoU-based matching.
+Supports class mapping between dataset and model outputs for fair comparison between different models.
+
+### video_compare.ipynb
+
+This script compares a base YOLOv8 model with a custom-trained model. It runs both on a video, performs object detection, and saves annotated results.
+
+
+
