@@ -4,7 +4,7 @@ from lane_detector import LaneDetector
 
 
 def main():
-    detector = LaneDetector('best.pt')
+    detector = LaneDetector('ROI_v2.pt')
 
     image_paths = [
         "data_input/img_1.png", "data_input/img_2.png"
