@@ -1,220 +1,330 @@
+from ultralytics import YOLO
 import cv2
 import numpy as np
+from itertools import combinations
 
 
 class LaneDetector:
-    def __init__(self):
-        # Background and line quality thresholds
-        self.bg_tolerance = 140
-        self.max_bg_sat = 60
-        self.min_contrast = 15
-        self.min_fill = 0.05
+    def __init__(self, model_path, config=None):
+        self.yolo = YOLO(model_path)
 
-        # Threshold to classify a line as solid vs dashed
-        self.solid_fill_threshold = 0.40
+        self.config = {
+            'yolo_conf': 0.25,
+            'adapt_c': -15,
+            'vertical_ratio': 0.5,
+            'num_segments': 6,
+            'local_density_thresh': 0.20,
+            'min_active_segments': 2,
+            'post_aspect_ratio': 4.0,
+            'post_min_solidity': 0.6,
+            'max_green_inside': 0.05,
+            'max_green_halo': 0.30,
+            'green_h_range': (35, 85),
+            'green_s_min': 40,
+            'display_width': 500,
 
-        self.low_white = np.array([0, 0, 190])
-        self.high_white = np.array([180, 30, 255])
-        self.low_yellow = np.array([10, 35, 70])
-        self.high_yellow = np.array([50, 255, 255])
+            'cluster_m_tol': 0.10,
+            'cluster_b_tol_pct': 0.04,
+            'min_line_coverage': 0.10,
 
-    def detect(self, img):
-        if img is None:
-            return []
-
-        orig_h, orig_w = img.shape[:2]
-        crop_y = orig_h // 2
-
-        # Analyze only the bottom half
-        bottom_img = img[crop_y:orig_h, :].copy()
-        h, w = bottom_img.shape[:2]
-        scale = w / 1280.0
-
-        # Dynamic parameters
-        params = {
-            'y_step': max(2, int(6 * (h / 720.0))),
-            'search_r': max(3, int(15 * scale)),
-            'check_r': max(6, int(30 * scale)),
-            'min_len': max(50, int(100 * scale)),
-            'max_gap': max(50, int(250 * scale)),
-            'dup_dist': int(w * 0.12),
-            'max_line_width': int(50 * scale)
+            'adapt_block_size_base': 81,
+            'hough_thresh_base': 20,
+            'hough_min_len_base': 30,
+            'hough_max_gap_base': 100,
+            'post_min_area_base': 20,
+            'halo_thickness_base': 15,
+            'search_radius_base': 15,
+            'y_step_base': 5
         }
 
-        hsv_img = cv2.cvtColor(bottom_img, cv2.COLOR_BGR2HSV)
-        roi_mask = cv2.inRange(hsv_img, np.array([0, 0, 0]), np.array([180, 50, 255]))
-        kernel = np.ones((max(5, int(25 * scale)), max(5, int(25 * scale))), np.uint8)
-        roi_patched = cv2.morphologyEx(roi_mask, cv2.MORPH_CLOSE, kernel)
+        if config:
+            self.config.update(config)
 
-        gray = cv2.cvtColor(bottom_img, cv2.COLOR_BGR2GRAY)
-        blur_size = max(3, int(5 * scale) | 1)
-        edges = cv2.Canny(cv2.GaussianBlur(gray, (blur_size, blur_size), 0), 30, 100)
-        edges_roi = cv2.bitwise_and(edges, roi_patched)
+    def scale_parameters(self, height, width):
+        scale_factor = width / 1280.0
 
-        # Hough Transform
-        raw_lines = cv2.HoughLinesP(
-            edges_roi, 1, np.pi / 180, 20,
-            minLineLength=params['min_len'], maxLineGap=params['max_gap']
+        def make_odd(val):
+            v = int(val)
+            return v if v % 2 != 0 else max(3, v + 1)
+
+        return {
+            'adapt_block_size': make_odd(self.config['adapt_block_size_base'] * scale_factor),
+            'hough_thresh': max(5, int(self.config['hough_thresh_base'] * scale_factor)),
+            'hough_min_len': max(10, int(self.config['hough_min_len_base'] * scale_factor)),
+            'hough_max_gap': max(20, int(self.config['hough_max_gap_base'] * scale_factor)),
+            'post_min_area': max(5, int(self.config['post_min_area_base'] * (scale_factor ** 2))),
+            'halo_thickness': max(3, int(self.config['halo_thickness_base'] * scale_factor)),
+            'y_step': max(2, int(self.config['y_step_base'] * (height / 720.0))),
+            'search_r': max(3, int(self.config['search_radius_base'] * scale_factor)),
+            'line_thick': max(3, int(6 * scale_factor)),
+            'font_scale': 0.7 * (width / 1000.0),
+            'road_margin': max(5, int(5 * scale_factor))
+        }
+
+    def calculate_line_coverage(self, m_inv, b_inv, height, width, reference_mask, scaled_params, horizon_y):
+        hits, total_points = 0, 0
+        search_r = scaled_params['search_r']
+        for y in range(height - 1, horizon_y, -scaled_params['y_step']):
+            total_points += 1
+            x_ideal = int(m_inv * y + b_inv)
+            if 0 <= x_ideal < width:
+                x_start, x_end = max(0, x_ideal - search_r), min(width, x_ideal + search_r + 1)
+                if np.any(reference_mask[y, x_start:x_end] > 0):
+                    hits += 1
+        return hits / total_points if total_points > 0 else 0
+
+    def add_text(self, img, text):
+        cv2.putText(img, text, (12, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 3)
+        cv2.putText(img, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        return img
+
+    def build_mosaic(self, images, titles, grid_size=(2, 3)):
+        rows, cols = grid_size
+        grid_rows = []
+        target_width = self.config['display_width']
+        for r in range(rows):
+            row_images = []
+            for c in range(cols):
+                idx = r * cols + c
+                if idx < len(images):
+                    img = images[idx]
+                    if len(img.shape) == 2:
+                        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                    resized = cv2.resize(img, (target_width, int(img.shape[0] * (target_width / img.shape[1]))))
+                    row_images.append(self.add_text(resized, titles[idx]))
+                else:
+                    row_images.append(np.zeros((300, target_width, 3), dtype=np.uint8))
+            grid_rows.append(np.hstack(row_images))
+        return np.vstack(grid_rows)
+
+    def process_image(self, original_img, debug=False):
+        orig_h, orig_w = original_img.shape[:2]
+        crop_y = orig_h // 2
+        img = original_img[crop_y:orig_h, :].copy()
+        height, width = img.shape[:2]
+        scaled_params = self.scale_parameters(height, width)
+
+        debug_images, debug_titles = [], []
+        if debug:
+            debug_images.append(img.copy())
+            debug_titles.append("1. ROI")
+
+        results = self.yolo.predict(img, conf=self.config['yolo_conf'], verbose=False)
+        road_mask = np.full((height, width), 255, dtype=np.uint8)
+
+        if results[0].masks is not None:
+            road_mask = cv2.resize(results[0].masks.data[0].cpu().numpy(), (width, height))
+            road_mask = (road_mask * 255).astype(np.uint8)
+            margin = scaled_params['road_margin']
+            kernel = np.ones((margin, margin), np.uint8)
+            road_mask = cv2.erode(road_mask, kernel, iterations=1)
+
+        y_horizon = np.min(np.where(road_mask > 0)[0]) if np.any(road_mask > 0) else 0
+
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        blur = cv2.GaussianBlur(gray, (11, 11), 0)
+        adaptive_raw = cv2.adaptiveThreshold(
+            blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
+            scaled_params['adapt_block_size'], self.config['adapt_c']
+        )
+        paint_mask = cv2.bitwise_and(adaptive_raw, road_mask)
+
+        verified_mask = np.zeros_like(paint_mask)
+        lines = cv2.HoughLinesP(
+            paint_mask, 1, np.pi / 180, scaled_params['hough_thresh'],
+            minLineLength=scaled_params['hough_min_len'], maxLineGap=scaled_params['hough_max_gap']
         )
 
-        vertical_lines = []
-        if raw_lines is not None:
-            for line in raw_lines:
+        if lines is not None:
+            for line in lines:
                 x1, y1, x2, y2 = line[0]
-                if abs(x2 - x1) > abs(y2 - y1):
-                    continue
-                vertical_lines.append((x1, y1, x2, y2))
+                if abs(y2 - y1) > abs(x2 - x1) * self.config['vertical_ratio']:
+                    m, b = (x2 - x1) / (y2 - y1), x1 - ((x2 - x1) / (y2 - y1)) * y1
+                    active_segments, seg_h = 0, height // self.config['num_segments']
+                    for s in range(self.config['num_segments']):
+                        y_s, y_e = s * seg_h, (s + 1) * seg_h
+                        hits, pts = 0, 0
+                        for y_seg in range(y_s, y_e, 3):
+                            x_seg = int(m * y_seg + b)
+                            if 0 <= x_seg < width:
+                                pts += 1
+                                if paint_mask[y_seg, x_seg] > 0:
+                                    hits += 1
+                        if pts > 0 and (hits / pts) > self.config['local_density_thresh']:
+                            active_segments += 1
+                    if active_segments >= self.config['min_active_segments']:
+                        cv2.line(verified_mask, (int(m * 0 + b), 0), (int(m * height + b), height), 255,
+                                 max(5, int(12 * (width / 1280.0))))
 
-        mask_w = cv2.inRange(hsv_img, self.low_white, self.high_white)
-        mask_y = cv2.inRange(hsv_img, self.low_yellow, self.high_yellow)
-        color_mask = cv2.bitwise_or(mask_w, mask_y)
+        raw_lines = cv2.bitwise_and(paint_mask, verified_mask)
+        clean_lanes = np.zeros_like(raw_lines)
+        hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-        scored_lines = []
-        for x1, y1, x2, y2 in vertical_lines:
-            if x1 != x2:
-                m = (y2 - y1) / (x2 - x1)
-                b_inter = y1 - m * x1
-                x_bot = int((h - b_inter) / m)
-                x_top = int((-b_inter) / m)
-            else:
-                x_bot, x_top = x1, x1
+        green_mask = cv2.inRange(
+            hsv_img,
+            np.array([self.config['green_h_range'][0], self.config['green_s_min'], 20]),
+            np.array([self.config['green_h_range'][1], 255, 255])
+        )
 
-            score, fill = self._evaluate_line(x_bot, x_top, h, w, color_mask, bottom_img, hsv_img, gray, params)
+        contours, _ = cv2.findContours(raw_lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < scaled_params['post_min_area']:
+                continue
 
-            if score >= 0.70:
-                scored_lines.append({
-                    'x_bot': x_bot, 'x_top': x_top,
-                    'score': score, 'fill': fill
-                })
+            rect = cv2.minAreaRect(cnt)
+            (x_rect, y_rect), (w_rect, h_rect), _ = rect
+            if w_rect == 0 or h_rect == 0:
+                continue
 
-        scored_lines.sort(key=lambda x: x['score'], reverse=True)
-        final_lanes = []
+            if max(w_rect, h_rect) / min(w_rect, h_rect) < self.config['post_aspect_ratio']:
+                continue
 
-        for line in scored_lines:
+            hull = cv2.convexHull(cnt)
+            if cv2.contourArea(hull) > 0 and (area / cv2.contourArea(hull)) < self.config['post_min_solidity']:
+                continue
+
+            inside_mask = np.zeros_like(raw_lines)
+            cv2.drawContours(inside_mask, [cnt], -1, 255, -1)
+
+            if cv2.countNonZero(inside_mask) > 0:
+                green_ratio = cv2.countNonZero(cv2.bitwise_and(green_mask, inside_mask)) / cv2.countNonZero(inside_mask)
+                if green_ratio <= self.config['max_green_inside']:
+                    cv2.drawContours(clean_lanes, [cnt], -1, 255, -1)
+
+        if debug:
+            debug_images.extend([road_mask.copy(), paint_mask.copy(), clean_lanes.copy()])
+            debug_titles.extend(["2. YOLO Mask", "3. Adaptive Mask", "4. Filtered Blobs"])
+
+        clean_contours, _ = cv2.findContours(clean_lanes, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        raw_candidates = []
+        for cnt in clean_contours:
+            if len(cnt) < 2:
+                continue
+            [vx, vy, x0, y0] = cv2.fitLine(cnt, cv2.DIST_L2, 0, 0.01, 0.01)
+            if vy == 0:
+                continue
+            M = cv2.moments(cnt)
+            if M["m00"] == 0:
+                continue
+            m_inv, b_inv = (vx / vy)[0], (int(M["m10"] / M["m00"]) - (vx / vy) * int(M["m01"] / M["m00"]))[0]
+
+            x_bot = m_inv * height + b_inv
+            x_top = m_inv * y_horizon + b_inv
+
+            if 0 <= x_bot <= width and 0 <= x_top <= width:
+                coverage = self.calculate_line_coverage(m_inv, b_inv, height, width, clean_lanes, scaled_params,
+                                                        y_horizon)
+                if coverage >= self.config['min_line_coverage']:
+                    raw_candidates.append({
+                        'm': m_inv, 'b': b_inv, 'x_bot': x_bot, 'cov': coverage, 'abs_m': abs(m_inv)
+                    })
+
+        unique_lines = []
+        for cand in sorted(raw_candidates, key=lambda x: x['cov'], reverse=True):
             is_dup = False
-            for selected in final_lanes:
-                dist_bot = abs(line['x_bot'] - selected['x_bot'])
-                x_mid = line['x_bot'] + (line['x_top'] - line['x_bot']) * 0.5
-                s_mid = selected['x_bot'] + (selected['x_top'] - selected['x_bot']) * 0.5
-                dist_mid = abs(x_mid - s_mid)
-
-                if dist_bot < params['dup_dist'] or dist_mid < (params['dup_dist'] * 0.6):
+            for ul in unique_lines:
+                if abs(cand['m'] - ul['m']) < 0.05 and abs(cand['x_bot'] - ul['x_bot']) < width * 0.05:
                     is_dup = True
                     break
-
             if not is_dup:
-                final_lanes.append(line)
-            if len(final_lanes) == 3:
-                break
+                unique_lines.append(cand)
 
-        results = []
-        for lane in final_lanes:
-            pt1 = (lane['x_bot'], orig_h)
-            pt2 = (lane['x_top'], crop_y)
+        valid_groups = []
+        min_lane_width = width * 0.10
+        max_lane_width = width * 0.80
 
-            dx = pt2[0] - pt1[0]
-            dy = pt2[1] - pt1[1]
-
-            if dx == 0:
-                a, b = float('inf'), pt1[0]
-            else:
-                a = dy / dx
-                b = pt1[1] - a * pt1[0]
-
-            line_type = "solid" if lane['fill'] >= self.solid_fill_threshold else "dashed"
-
-            results.append({
-                'a': a, 'b': b, 'type': line_type,
-                'score': lane['score'], 'pts': (pt1, pt2)
-            })
-
-        return sorted(results, key=lambda r: r['pts'][0][0])
-
-    def draw_lines(self, img, lines):
-        result_img = img.copy()
-        thick = max(2, int(5 * (img.shape[1] / 1280.0)))
-
-        for line in lines:
-            pt1, pt2 = line['pts']
-            color = (0, 255, 0) if line['type'] == 'solid' else (0, 0, 255)
-            cv2.line(result_img, pt1, pt2, color, thick)
-
-        return result_img
-
-    def _evaluate_line(self, x_bot, x_top, h, w, mask, img_bgr, img_hsv, img_gray, params):
-        valid_hits = 0
-        paint_hits = 0
-        total_span = 0
-
-        for y in range(h - 1, 0, -params['y_step']):
-            total_span += 1
-            p_h = y / h
-            curr_search = max(2, int(params['search_r'] * p_h))
-            curr_check = max(4, int(params['check_r'] * p_h))
-
-            x_ideal = int(x_bot + (x_top - x_bot) * (1.0 - p_h))
-            if x_ideal - curr_check < 0 or x_ideal + curr_check >= w:
+        for n in [3, 2]:
+            if len(unique_lines) < n:
                 continue
 
-            local_x = x_ideal
-            max_g = -1
-            for dx in range(-curr_search, curr_search + 1):
-                cx = x_ideal + dx
-                if 0 <= cx < w and img_gray[y, cx] > max_g:
-                    max_g = img_gray[y, cx]
-                    local_x = cx
-
-            xc = local_x
-            if xc - curr_check < 0 or xc + curr_check >= w:
-                continue
-
-            g_C = int(img_gray[y, xc])
-            g_L = int(img_gray[y, xc - curr_check])
-            g_R = int(img_gray[y, xc + curr_check])
-
-            is_contrast = (g_C > g_L + self.min_contrast) and (g_C > g_R + self.min_contrast)
-            is_valid_col = mask[y, xc] > 0
-
-            if is_contrast and is_valid_col:
-                w_left = 0
-                while (xc - w_left >= 0) and (img_gray[y, xc - w_left] > g_C - 25):
-                    w_left += 1
-
-                w_right = 0
-                while (xc + w_right < w) and (img_gray[y, xc + w_right] > g_C - 25):
-                    w_right += 1
-
-                max_allowed_width = max(8, int(params['max_line_width'] * p_h))
-
-                if (w_left + w_right) > max_allowed_width:
+            for combo in combinations(unique_lines, n):
+                combo = sorted(combo, key=lambda x: x['x_bot'])
+                dists = [combo[i + 1]['x_bot'] - combo[i]['x_bot'] for i in range(len(combo) - 1)]
+                if any(d < min_lane_width or d > max_lane_width for d in dists):
                     continue
 
-                paint_hits += 1
+                intersect_points = []
+                valid_intersection = True
 
-                col_L = img_bgr[y, xc - curr_check].astype(np.int32)
-                col_R = img_bgr[y, xc + curr_check].astype(np.int32)
-                sat_L = img_hsv[y, xc - curr_check, 1]
-                sat_R = img_hsv[y, xc + curr_check, 1]
+                for i, j in combinations(range(len(combo)), 2):
+                    l1, l2 = combo[i], combo[j]
+                    dm = l1['m'] - l2['m']
 
-                is_asphalt_L = (sat_L <= self.max_bg_sat)
-                is_asphalt_R = (sat_R <= self.max_bg_sat)
-                is_symmetric = np.sum(np.abs(col_L - col_R)) <= self.bg_tolerance
+                    if abs(dm) < 0.001:
+                        intersect_points.append((l1['x_bot'], -100000))
+                    else:
+                        y_int = (l2['b'] - l1['b']) / dm
+                        x_int = l1['m'] * y_int + l1['b']
 
-                is_valid_bg = False
-                if is_asphalt_L and is_asphalt_R and is_symmetric:
-                    is_valid_bg = True
-                elif is_asphalt_L or is_asphalt_R:
-                    if (g_C > g_L + 30) and (g_C > g_R + 30):
-                        is_valid_bg = True
+                        if y_int > height * 0.8:
+                            valid_intersection = False
+                            break
+                        intersect_points.append((x_int, y_int))
 
-                if is_valid_bg:
-                    valid_hits += 1
+                if not valid_intersection:
+                    continue
 
-        fill_ratio = paint_hits / total_span if total_span > 0 else 0
-        if fill_ratio < self.min_fill:
-            return 0.0, fill_ratio
+                pts_x = [p[0] for p in intersect_points]
+                x_spread = max(pts_x) - min(pts_x) if len(pts_x) > 0 else 0
+                symmetry_err = abs(dists[0] - dists[1]) if len(dists) == 2 else 0
+                n_penalty = 0 if n == 3 else width * 2.0
+                total_score = x_spread + (symmetry_err * 0.5) + n_penalty
 
-        quality = valid_hits / paint_hits if paint_hits > 0 else 0
-        density = min(1.0, fill_ratio / 0.15)
+                valid_groups.append({
+                    'combo': combo,
+                    'score': total_score,
+                    'x_spread': x_spread
+                })
 
-        return quality * density, fill_ratio
+        best_group = []
+        if valid_groups:
+            valid_groups.sort(key=lambda g: g['score'])
+            best_group = valid_groups[0]['combo']
+
+        if not best_group and unique_lines:
+            best_group = [max(unique_lines, key=lambda x: x['cov'])]
+
+        if debug:
+            final_overlay = img.copy()
+            for i, lane in enumerate(best_group):
+                x_b, x_t = int(lane['x_bot']), int(lane['m'] * y_horizon + lane['b'])
+                cv2.line(final_overlay, (x_b, height), (x_t, y_horizon), (0, 0, 255), scaled_params['line_thick'])
+                cv2.putText(final_overlay, f"L{i + 1}", (x_b - 20, height - 20), cv2.FONT_HERSHEY_SIMPLEX,
+                            scaled_params['font_scale'], (0, 0, 255), 2)
+
+            debug_images.append(final_overlay)
+            debug_titles.append("5. Intersection Check")
+            res = cv2.addWeighted(img, 0.7, final_overlay, 0.8, 0)
+            res[clean_lanes > 0] = [0, 255, 0]
+            debug_images.append(res)
+            debug_titles.append("6. FINAL RESULT")
+
+            cv2.imshow("Debug Panel", self.build_mosaic(debug_images, debug_titles))
+
+        return best_group, y_horizon
+
+    def draw_lanes(self, original_img, lines):
+        result_img = original_img.copy()
+        orig_h, orig_w = original_img.shape[:2]
+        crop_y = orig_h // 2
+
+        scaled_params = self.scale_parameters(orig_h - crop_y, orig_w)
+
+        for i, lane in enumerate(lines):
+            x_top = int(lane['m'] * (0 - crop_y) + lane['b'])
+            x_bot = int(lane['m'] * (orig_h - crop_y) + lane['b'])
+
+            cv2.line(result_img, (x_bot, orig_h), (x_top, 0), (0, 255, 0), scaled_params['line_thick'])
+
+            cv2.putText(
+                result_img,
+                f"L{i + 1}",
+                (x_bot - 20, orig_h - 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                scaled_params['font_scale'],
+                (0, 255, 0),
+                2
+            )
+
+        return result_img

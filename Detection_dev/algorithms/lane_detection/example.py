@@ -4,46 +4,49 @@ from lane_detector import LaneDetector
 
 
 def main():
-    # Initialize the detector
-    detector = LaneDetector()
+    detector = LaneDetector('best.pt')
 
-    # Path to a single image file
-    img_path = "data_input/1.png"
+    image_paths = [
+        "data_input/img_1.png", "data_input/img_2.png"
+    ]
 
-    if not os.path.exists(img_path):
-        print(f"[ERROR] File not found: {img_path}")
-        return
+    for img_path in image_paths:
+        if not os.path.exists(img_path):
+            print(f"Not found: {img_path}")
+            continue
 
-    print(f"--- Processing: {img_path} ---")
+        print(f"\nAnalyzing: {img_path}")
 
-    # 1. Load the image
-    img = cv2.imread(img_path)
+        # Load img
+        img = cv2.imread(img_path)
 
-    # 2. Detect lines
-    detected_lines = detector.detect(img)
+        # Extract mathematical parameters
+        detected_lines, y_horizon = detector.process_image(img, debug=True)
 
-    # 3. Print results to the console
-    if not detected_lines:
-        print("No lines detected with >= 70% confidence.")
-    else:
-        for i, line in enumerate(detected_lines):
-            print(f"Line {i + 1}: y = {line['a']:.2f}x + {line['b']:.2f} "
-                  f"| Type: {line['type'].upper()} "
-                  f"| Confidence: {line['score'] * 100:.1f}%")
+        # Log coefficients
+        if detected_lines:
+            print(f"Lanes found: {len(detected_lines)}")
+            for i, line in enumerate(detected_lines):
+                print(f" L{i + 1}: x = {line['m']:.4f} * y + {line['b']:.2f}")
+        else:
+            print("No lanes found.")
 
-    # 4. Draw lines on the image (Green = solid, Red = dashed)
-    result_img = detector.draw_lines(img, detected_lines)
+        # Draw infinite mathematical lines
+        final_output = detector.draw_lanes(img, detected_lines)
 
-    # Scale the window down if the image is too large
-    h, w = result_img.shape[:2]
-    if h > 800:
-        result_img = cv2.resize(result_img, (int(w * (800 / h)), 800))
+        # Scale down the output window for better display
+        target_width = 800
+        aspect_ratio = target_width / final_output.shape[1]
+        target_height = int(final_output.shape[0] * aspect_ratio)
+        resized_output = cv2.resize(final_output, (target_width, target_height))
 
-    # Display the result
-    cv2.imshow("Lane Detection Result", result_img)
+        # Show final overlay
+        cv2.imshow("Final Result", resized_output)
 
-    print("Press any key to close the window and exit.")
-    cv2.waitKey(0)
+        # Press 'q' to quit, any other key for the next image
+        if cv2.waitKey(0) & 0xFF == ord('q'):
+            break
+
     cv2.destroyAllWindows()
 
 
