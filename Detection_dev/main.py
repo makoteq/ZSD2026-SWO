@@ -13,7 +13,8 @@ from PIL import Image
 from keras import models
 from typing import Dict, Final
 import matplotlib.pyplot as plt
-
+from pathlib import Path
+from algorithms.lane_detection.lane_detector import LaneDetector
 
 from utils.radar import Radar
 from utils.car import Car
@@ -60,7 +61,7 @@ def drawCustomBox(annotatedFrame: np.ndarray, boxXyxy: np.ndarray, trackId: int,
 
 
 if __name__ == "__main__":
-
+    script_dir = Path(__file__).resolve().parent
 
 
     model = YOLO(YOLO_MODEL_PATH)
@@ -68,9 +69,8 @@ if __name__ == "__main__":
     MODEL_PATH = "data/models/depth.pth"
     LIB_PATH = "data/models/Depth-Anything-V2" 
 
-    depthProcessor = Depth(modelPath=MODEL_PATH, libPath=LIB_PATH)
-    depthProcessor.downloadModel()
-    
+    # depthProcessor = Depth(modelPath=MODEL_PATH, libPath=LIB_PATH)
+    # depthProcessor.downloadModel()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     cap = cv2.VideoCapture(VIDEO_PATH)
@@ -95,13 +95,29 @@ if __name__ == "__main__":
                 break
             
             if frameIndex == 0:
-                depthMap = depthProcessor.getDepthMap(frame)
-                depthProcessor.getLog()
-                
-                # Wizualizacja
-                vis = depthProcessor.visualizeDepth(depthMap)
-                cv2.imshow("Depth Anything V2 Small", vis)
-                cv2.waitKey(0)
+
+                #depth estimation 1
+                # depthMap = depthProcessor.getDepthMap(frame)
+                # depthProcessor.getLog()
+
+                # lane detection
+                detector = LaneDetector(str(script_dir / "algorithms" / "lane_detection" / "ROI_v2.pt"))
+                detected_lines, y_horizon = detector.process_image(frame, debug=False)
+                print('detected_lines')
+                print(detected_lines)
+                final_output = detector.draw_lanes(frame, detected_lines)
+                target_width = 800
+                aspect_ratio = target_width / final_output.shape[1]
+                target_height = int(final_output.shape[0] * aspect_ratio)
+                resized_output = cv2.resize(final_output, (target_width, target_height))
+                cv2.imshow("Final Result", resized_output)
+
+
+            #depth estimation 2
+            #     # Wizualizacja
+            #     vis = depthProcessor.visualizeDepth(depthMap)
+            #     cv2.imshow("Depth Anything V2 Small", vis)
+            #     cv2.waitKey(0)
 
 
             results = model.track(
