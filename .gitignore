@@ -17,6 +17,10 @@ Detection_dev/v7
 .github/
 */__pycache__/
 *.log
+*.pyc
+*.cpython-312
+*.cpython-312.pyc
+
 
 # custom models for roi
 !Detection_dev/algorithms/lane_detection/*.pt

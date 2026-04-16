@@ -58,7 +58,9 @@ class Car:
         self.x, self.y, self.w, self.h = box
         self.lastConfidence = confidence
         self.lastSeen = frameIndex
-        self.history.append((float(self.x), float(self.y)))
+        bottomCenterX = float(self.x)
+        bottomCenterY = float(self.y + (self.h / 2.0))
+        self.history.append((bottomCenterX, bottomCenterY))
 
         if confidence > self.maxConfidence:
             self.maxConfidence = confidence
