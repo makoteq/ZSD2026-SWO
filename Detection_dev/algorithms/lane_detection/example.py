@@ -7,7 +7,10 @@ def main():
     detector = LaneDetector('ROI_v2.pt')
 
     image_paths = [
-        "data_input/img_1.png", "data_input/img_2.png"
+        "test_images/1.png", "test_images/2.png", "test_images/3.png",
+        "test_images/4.png", "test_images/5.webp", "test_images/7.webp",
+        "test_images/8.jpg", "test_images/9.webp", "test_images/10.jpg",
+        "test_images/11.jpg", "test_images/12.jpg", "test_images/13.jpg",
     ]
 
     for img_path in image_paths:
@@ -21,7 +24,7 @@ def main():
         img = cv2.imread(img_path)
 
         # Extract mathematical parameters
-        detected_lines, y_horizon = detector.process_image(img, debug=True)
+        detected_lines = detector.process_image(img, debug=True)
 
         # Log coefficients
         if detected_lines:
