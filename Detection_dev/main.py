@@ -1,4 +1,5 @@
 import os
+import time
 import ultralytics
 import tensorflow as tf
 import torch
@@ -42,11 +43,29 @@ FONT_THICKNESS = 1
 WINDOW_NAME = "Traffic Analysis"
 WAIT_KEY_MS = 1
 EXIT_KEY = ord('q')
+DRAW_LINES = 1
 
 DEPTH_CMAP: Final[str] = "magma"
 DEPTH_TITLE: Final[str] = "MiDaS Depth Map"
 COLORBAR_LABEL: Final[str] = "Relative Depth Intensity"
 FIG_SIZE_DEPTH: Final[tuple[int, int]] = (10, 6)
+
+def activateAlarm():
+    print("ALARM!!!")
+
+
+def isPointOutsideDetectedLanes(pointX: float, pointY: float, detectedLines: list, frameWidth: int, yHorizon: int) -> bool:
+    if len(detectedLines) < 2:
+        return False
+
+    if pointY < yHorizon:
+        return False
+
+    laneXs = [float(lane["m"] * pointY + lane["b"]) for lane in detectedLines]
+    leftBoundary = max(0.0, min(laneXs))
+    rightBoundary = min(float(frameWidth - 1), max(laneXs))
+
+    return pointX < leftBoundary or pointX > rightBoundary
 
 
 def drawCustomBox(annotatedFrame: np.ndarray, boxXyxy: np.ndarray, trackId: int, conf: float, carType: str) -> None:
@@ -66,6 +85,7 @@ if __name__ == "__main__":
 
     model = YOLO(YOLO_MODEL_PATH)
     cnn = models.load_model(CNN_MODEL_PATH, compile=False)
+    detector = LaneDetector(str(script_dir / "algorithms" / "lane_detection" / "ROI_v2.pt"))
     MODEL_PATH = "data/models/depth.pth"
     LIB_PATH = "data/models/Depth-Anything-V2" 
 
@@ -86,6 +106,8 @@ if __name__ == "__main__":
     out = cv2.VideoWriter(OUTPUT_VIDEO_PATH, fourcc, int(fps), (frameWidth, frameHeight))
     
     carsDict: Dict[int, Car] = {}
+    detected_lines = []
+    y_horizon = 0
     frameIndex = 0
 
     try:
@@ -93,7 +115,7 @@ if __name__ == "__main__":
             success, frame = cap.read()
             if not success:
                 break
-            
+
             if frameIndex == 0:
 
                 #depth estimation 1
@@ -101,7 +123,6 @@ if __name__ == "__main__":
                 # depthProcessor.getLog()
 
                 # lane detection
-                detector = LaneDetector(str(script_dir / "algorithms" / "lane_detection" / "ROI_v2.pt"))
                 detected_lines, y_horizon = detector.process_image(frame, debug=False)
                 print('detected_lines')
                 print(detected_lines)
@@ -111,7 +132,8 @@ if __name__ == "__main__":
                 target_height = int(final_output.shape[0] * aspect_ratio)
                 resized_output = cv2.resize(final_output, (target_width, target_height))
                 cv2.imshow("Final Result", resized_output)
-
+            if DRAW_LINES:
+                frame = detector.draw_lanes(frame, detected_lines)
 
             #depth estimation 2
             #     # Wizualizacja
@@ -150,6 +172,11 @@ if __name__ == "__main__":
 
                     points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
                     cv2.polylines(annotatedFrame, [points], isClosed=False, color=TRACK_COLOR, thickness=LINE_THICKNESS)
+
+                    if car.history:
+                        pointX, pointY = car.history[-1]
+                        if isPointOutsideDetectedLanes(pointX, pointY, detected_lines, frameWidth, y_horizon):
+                            activateAlarm()
 
             staleIds = [carId for carId, carObj in carsDict.items()
                         if carObj.lastSeen < frameIndex - MAX_MISSING_FRAMES
