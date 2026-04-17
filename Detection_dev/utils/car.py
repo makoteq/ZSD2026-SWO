@@ -1,12 +1,13 @@
 import cv2
 import numpy as np
 from typing import Dict, List, Tuple, Any, Final
+from .utils import get_x_from_line
 
-# --- CONFIGURATION ---
 IMAGE_WIDTH: Final[int] = 128
 IMAGE_HEIGHT: Final[int] = 128
 IMG_SIZE: Final[Tuple[int, int]] = (IMAGE_WIDTH, IMAGE_HEIGHT)
 NORM_FACTOR: Final[float] = 255.0
+SMOOTHING_WINDOW_SIZE: Final[int] = 8
 
 CATEGORY_MAP: Final[Dict[int, str]] = {
     0: "coupe",
@@ -16,8 +17,6 @@ CATEGORY_MAP: Final[Dict[int, str]] = {
     4: "truck",
     5: "van",
 }
-
-
 
 class Car:
     def __init__(self, trackId: int):
@@ -34,8 +33,50 @@ class Car:
         self.updateCount = 0
         self.type = "unknown"
         self.k = 0.0
-        self.speed = 0.0
         self.breakingDistance = 0.0
+        self.distance: List[float] = []
+        self.velocity: List[float] = []
+        self.speed = 0.0
+        self.realWidth = 0.0
+        self.realHeight = 0.0
+        self.frame_height = 0.0
+
+    def calcDistance(self, box: Tuple[float, float, float, float], detectedLines: Any, roadWidthH0Px: float, roadWidthMeters: float, fov: float) -> None:
+        yBottom = box[1] + (box[3] / 2) 
+        relativeYBottom = 1- (yBottom / self.frame_height) 
+        yBottom = relativeYBottom * self.frame_height
+        print(f"yBottom: {yBottom}")
+
+        xLeft = (detectedLines[0]['m'] * yBottom) + detectedLines[0]['b']
+        xRight = (detectedLines[1]['m'] * yBottom) + detectedLines[1]['b']
+        roadWidthAtY = abs(xRight - xLeft)
+        print(roadWidthAtY)
+
+        if roadWidthAtY > 0:
+
+            calculatedDist = roadWidthMeters * (roadWidthH0Px * fov / roadWidthAtY)
+            self.distance.append(float(calculatedDist))
+            
+            metersPerPixel = roadWidthMeters / roadWidthAtY
+            self.realWidth = box[2] * metersPerPixel 
+            self.realHeight = box[3] * metersPerPixel 
+        elif len(self.distance) > 0:
+            self.distance.append(self.distance[-1])
+        else:
+            self.distance.append(0.0)
+
+    def calcVelocity(self, frameTime: float) -> float:
+        if len(self.distance) < 2 or frameTime <= 0:
+            self.velocity.append(0.0)
+            return 0.0
+            
+        instantVelocity = abs(self.distance[-1] - self.distance[-2]) / frameTime
+        self.velocity.append(instantVelocity)
+        
+        window = self.velocity[-SMOOTHING_WINDOW_SIZE:]
+        self.speed = sum(window) / len(window)
+        
+        return self.speed
 
     def checkType(self, frame: np.ndarray, cnnModel: Any) -> Tuple[str, float, np.ndarray, float]:
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -53,7 +94,12 @@ class Car:
 
         return category, confidence, classProbs, kPred
 
-    def update(self, box: Tuple[float, float, float, float], confidence: float, frame: np.ndarray, frameIndex: int, cnnModel: Any) -> None:
+    def update(self, box: Tuple[float, float, float, float], confidence: float, frame: np.ndarray, frameIndex: int, cnnModel: Any, 
+               detectedLines: Any, roadWidthH0Px: float, roadWidthMeters: float, fov: float, frameTime: float) -> None:
+        
+        self.calcDistance(box, detectedLines, roadWidthH0Px, roadWidthMeters, fov)
+        self.calcVelocity(frameTime)
+        self.frame_height = frame.shape[0]
         self.updateCount += 1
         self.x, self.y, self.w, self.h = box
         self.lastConfidence = confidence
