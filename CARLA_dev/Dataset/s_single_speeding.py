@@ -95,11 +95,11 @@ def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
     destroy_all_vehicles(world)
 
     v1_model = blueprint_library.find('vehicle.dodge.charger_2020')
-    #y_lane = random.choice([LANE_A_Y, LANE_B_Y])
-    y_lane = LANE_A_Y
+    lane_y = random.choice([LANE_A_Y, LANE_B_Y])
+    #lane_y = LANE_A_Y
 
 
-    t1 = carla.Transform(carla.Location(x=START_X, y=y_lane, z=SPAWN_Z), carla.Rotation(yaw=YAW))
+    t1 = carla.Transform(carla.Location(x=START_X, y=lane_y, z=SPAWN_Z), carla.Rotation(yaw=YAW))
     v1 = world.try_spawn_actor(v1_model, t1)
     v1.set_target_velocity(carla.Vector3D(x=INITIAL_KPH / 3.6, y=0.0, z=0.0))
 
@@ -115,6 +115,7 @@ def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
     print(f"[single_speeding] target={target_kph:.1f} km/h")
     speed_samples = []
     t0 = time.time()
+
     try:
         scenario_active = True
         while scenario_active:

@@ -9,22 +9,34 @@ import traceback
 from datetime import datetime
 
 import s_single_speeding
-
+import s_pull_over
+#sensor loc
 #todo remove const and add random
 SENSOR_X = 181.0
 SENSOR_Y = 107.0
 SENSOR_Z = 6.0
 SENSOR_YAW = 180.0
 SENSOR_PITCH = -5.0
-
+#debug lines                #todo find a better way to disp them
+DRAW_DEBUG_LINES = True
+SIDE_LEFT_Y = 111.0
+SIDE_RIGHT_Y = 104.0
+SIDE_LINE_X_START = 20.0
+SIDE_LINE_X_END = 200.0
+SIDE_LINE_Z = 0.3
+SIDE_LINE_COLOR = carla.Color(255, 255, 255)
+SIDE_LINE_THICKNESS = 0.05
 
 #scenarios------------------------------------------------------------------------------
 SCENARIOS_TO_RUN=[
+    #standard scenarios:
     #("normal_traffic", scenario_normal_traffic, "Normal Traffic"),
-    ("single_speeding", s_single_speeding, "Single Speeding"),
+    #("single_speeding", s_single_speeding, "Single Speeding"),
     #("speeding", scenario_speeding, "Speeding"),
     #("lane_change", scenario_lane_change, "Lane Change"),
     #("overtaking", scenario_overtaking, "Overtaking"),
+    #anomalys:
+    ("pull_over", s_pull_over, "Pull Over To Shoulder"),
 ]
 SAMPLES_PER_SCENARIO = 1
 RECORD_DURATION_SEC = 30.0      #for normal traffic only
@@ -247,6 +259,17 @@ def safe_callback_wrapper(fn):
     return _wrapped
 
 #enviroment and blueprint presets ----------------------------------------------------------------
+def draw_debug_side_lines(world):
+    if not DRAW_DEBUG_LINES:
+        return
+
+    left_a = carla.Location(x=SIDE_LINE_X_START, y=SIDE_LEFT_Y, z=SIDE_LINE_Z)
+    left_b = carla.Location(x=SIDE_LINE_X_END, y=SIDE_LEFT_Y, z=SIDE_LINE_Z)
+    right_a = carla.Location(x=SIDE_LINE_X_START, y=SIDE_RIGHT_Y, z=SIDE_LINE_Z)
+    right_b = carla.Location(x=SIDE_LINE_X_END, y=SIDE_RIGHT_Y, z=SIDE_LINE_Z)
+
+    world.debug.draw_line(left_a, left_b, thickness=SIDE_LINE_THICKNESS, color=SIDE_LINE_COLOR, life_time=0.0, persistent_lines=True)
+    world.debug.draw_line(right_a, right_b, thickness=SIDE_LINE_THICKNESS, color=SIDE_LINE_COLOR, life_time=0.0, persistent_lines=True)
 
 def apply_radar_preset(radar_bp, preset_name: str):
     preset = RADAR_PRESETS[preset_name]
