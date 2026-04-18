@@ -40,7 +40,7 @@ CLUSTER_MIN_SAMPLES = 1
 CLUSTER_COLUMN = "cluster"
 
 CLUSTER_SCALE_X = 0.6
-CLUSTER_SCALE_Y = 0.15
+CLUSTER_SCALE_Y = 0.1
 CLUSTER_SCALE_Z = 0.3
 CLUSTER_SCALE_VELOCITY = 0.5
 
@@ -57,11 +57,11 @@ LOOP_ITERATIONS = 50
 TIME_STEP_DEFAULT = 0.5
 
 class Radar:
-    def __init__(self, relativePath: str) -> None:
+    def __init__(self, relativePath: str, start_time: float) -> None:
         self.relativePath: str = relativePath
         self.pointsSwap: pd.DataFrame = pd.DataFrame()
         self.currentTime: float = INITIAL_TIME_VALUE
-        self.t0: float = INITIAL_TIME_VALUE
+        self.t0: float = start_time
         self.loadData()
 
     def loadData(self) -> None:
@@ -74,6 +74,7 @@ class Radar:
     def step(self, timeStep: float) -> None:
         self.pointsSwap = pd.DataFrame()
         endTime: float = self.currentTime + timeStep
+        print(f"Processing time step: {self.currentTime:.2f}s to {endTime:.2f}s")
         mask = (self.dataFrame[COLUMN_TIME] >= self.currentTime) & (self.dataFrame[COLUMN_TIME] < endTime)
         self.pointsSwap = self.dataFrame[mask].copy()
         self.currentTime += timeStep
@@ -192,7 +193,7 @@ class Radar:
         ].copy()
         
         if not self.dataFrame.empty:
-            self.t0 = float(self.dataFrame[COLUMN_TIME].min())
+            # self.t0 = float(self.dataFrame[COLUMN_TIME].min())
             self.currentTime = self.t0
 
 # if __name__ == "__main__":

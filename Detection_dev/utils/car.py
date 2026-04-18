@@ -40,26 +40,26 @@ class Car:
         self.realWidth = 0.0
         self.realHeight = 0.0
         self.frame_height = 0.0
+        self.frame_width = 0.0
+        self.imgSize = 0.0
 
-    def calcDistance(self, box: Tuple[float, float, float, float], detectedLines: Any, roadWidthH0Px: float, roadWidthMeters: float, fov: float) -> None:
+    def calcDistance(self, box: Tuple[float, float, float, float], detectedLines: Any, roadWidthH0Px: float, roadWidthMeters: float, fov: float, ) -> None:
         yBottom = box[1] + (box[3] / 2) 
-        relativeYBottom = 1- (yBottom / self.frame_height) 
+        relativeYBottom = yBottom / self.frame_height
         yBottom = relativeYBottom * self.frame_height
-        print(f"yBottom: {yBottom}")
-
         xLeft = (detectedLines[0]['m'] * yBottom) + detectedLines[0]['b']
         xRight = (detectedLines[1]['m'] * yBottom) + detectedLines[1]['b']
         roadWidthAtY = abs(xRight - xLeft)
-        print(roadWidthAtY)
 
         if roadWidthAtY > 0:
-
-            calculatedDist = roadWidthMeters * (roadWidthH0Px * fov / roadWidthAtY)
+            
+            calculatedDist = roadWidthMeters * (roadWidthH0Px *fov / roadWidthAtY)
             self.distance.append(float(calculatedDist))
             
+            multiplyFactor = self.frame_width / self.imgSize
             metersPerPixel = roadWidthMeters / roadWidthAtY
-            self.realWidth = box[2] * metersPerPixel 
-            self.realHeight = box[3] * metersPerPixel 
+            self.realWidth = box[2] * metersPerPixel *  multiplyFactor
+            self.realHeight = box[3] * metersPerPixel *  multiplyFactor
         elif len(self.distance) > 0:
             self.distance.append(self.distance[-1])
         else:
@@ -95,16 +95,20 @@ class Car:
         return category, confidence, classProbs, kPred
 
     def update(self, box: Tuple[float, float, float, float], confidence: float, frame: np.ndarray, frameIndex: int, cnnModel: Any, 
-               detectedLines: Any, roadWidthH0Px: float, roadWidthMeters: float, fov: float, frameTime: float) -> None:
+               detectedLines: Any, roadWidthH0Px: float, roadWidthMeters: float, fov: float, frameTime: float,  imgSize: int) -> None:
         
+        self.imgSize = imgSize 
         self.calcDistance(box, detectedLines, roadWidthH0Px, roadWidthMeters, fov)
         self.calcVelocity(frameTime)
         self.frame_height = frame.shape[0]
+        self.frame_width = frame.shape[1]
         self.updateCount += 1
         self.x, self.y, self.w, self.h = box
         self.lastConfidence = confidence
         self.lastSeen = frameIndex
         self.history.append((float(self.x), float(self.y)))
+
+
 
         if confidence > self.maxConfidence:
             self.maxConfidence = confidence
