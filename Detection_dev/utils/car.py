@@ -1,7 +1,8 @@
 import cv2
 import numpy as np
+from .radar import Radar
 from typing import Dict, List, Tuple, Any, Final
-from .utils import get_x_from_line
+
 
 IMAGE_WIDTH: Final[int] = 128
 IMAGE_HEIGHT: Final[int] = 128
@@ -37,33 +38,43 @@ class Car:
         self.distance: List[float] = []
         self.velocity: List[float] = []
         self.speed = 0.0
-        self.realWidth = 0.0
-        self.realHeight = 0.0
         self.frame_height = 0.0
         self.frame_width = 0.0
         self.imgSize = 0.0
+        self.radar = None
 
-    def calcDistance(self, box: Tuple[float, float, float, float], detectedLines: Any, roadWidthH0Px: float, roadWidthMeters: float, fov: float, ) -> None:
-        yBottom = box[1] + (box[3] / 2) 
-        relativeYBottom = yBottom / self.frame_height
-        yBottom = relativeYBottom * self.frame_height
+    def calcDistance(self, box: Tuple[float, float, float, float], detectedLines: List[Any], roadWidthH0Px: float, roadWidthMeters: float) -> None:
+        yBottom = self.y + (self.h / 2.0)
         xLeft = (detectedLines[0]['m'] * yBottom) + detectedLines[0]['b']
         xRight = (detectedLines[1]['m'] * yBottom) + detectedLines[1]['b']
-        roadWidthAtY = abs(xRight - xLeft)
-
-        if roadWidthAtY > 0:
+        pixelWidthAtY = abs(xRight - xLeft)
+        
+        if pixelWidthAtY == 0:
+            return 0.0
             
-            calculatedDist = roadWidthMeters * (roadWidthH0Px *fov / roadWidthAtY)
-            self.distance.append(float(calculatedDist))
-            
-            multiplyFactor = self.frame_width / self.imgSize
-            metersPerPixel = roadWidthMeters / roadWidthAtY
-            self.realWidth = box[2] * metersPerPixel *  multiplyFactor
-            self.realHeight = box[3] * metersPerPixel *  multiplyFactor
-        elif len(self.distance) > 0:
-            self.distance.append(self.distance[-1])
+        self.distance.append((roadWidthMeters * roadWidthH0Px) *self.fov / pixelWidthAtY)
+        return self.distance[-1]
+    
+    def calcLanePosition(self, detectedLines: List[Any]) -> float:
+        yBottom = self.y + (self.h / 2.0)
+        xCar = self.x
+        
+        xLeft = (detectedLines[0]['m'] * yBottom) + detectedLines[0]['b']
+        xRight = (detectedLines[1]['m'] * yBottom) + detectedLines[1]['b']
+        
+        laneWidthPx = xRight - xLeft
+        
+        if abs(laneWidthPx) < 1e-6:
+            relativePos = 0.5
         else:
-            self.distance.append(0.0)
+            relativePos = (xCar - xLeft) / laneWidthPx
+
+        laneWidthMeters = abs(self.radar.maxX - self.radar.minX)
+        radarPos = self.radar.minX + (relativePos * laneWidthMeters)
+
+        print(f"Car {self.trackId} - Relative Lane Position: {relativePos:.2f}, Radar X Position: {radarPos:.2f}m")
+        
+        return float(radarPos)
 
     def calcVelocity(self, frameTime: float) -> float:
         if len(self.distance) < 2 or frameTime <= 0:
@@ -75,7 +86,8 @@ class Car:
         
         window = self.velocity[-SMOOTHING_WINDOW_SIZE:]
         self.speed = sum(window) / len(window)
-        
+        self.speed = 0.0 
+
         return self.speed
 
     def checkType(self, frame: np.ndarray, cnnModel: Any) -> Tuple[str, float, np.ndarray, float]:
@@ -95,21 +107,23 @@ class Car:
         return category, confidence, classProbs, kPred
 
     def update(self, box: Tuple[float, float, float, float], confidence: float, frame: np.ndarray, frameIndex: int, cnnModel: Any, 
-               detectedLines: Any, roadWidthH0Px: float, roadWidthMeters: float, fov: float, frameTime: float,  imgSize: int) -> None:
+               detectedLines: Any, roadWidthH0Px: float, fov: float, frameTime: float,  imgSize: int, radar: Radar) -> None:
         
-        self.imgSize = imgSize 
-        self.calcDistance(box, detectedLines, roadWidthH0Px, roadWidthMeters, fov)
-        self.calcVelocity(frameTime)
+        self.x, self.y, self.w, self.h = box
+        self.history.append((float(self.x), float(self.y)))
         self.frame_height = frame.shape[0]
         self.frame_width = frame.shape[1]
-        self.updateCount += 1
-        self.x, self.y, self.w, self.h = box
         self.lastConfidence = confidence
         self.lastSeen = frameIndex
-        self.history.append((float(self.x), float(self.y)))
-
-
-
+        self.imgSize = imgSize 
+        self.fov = fov
+        self.radar = radar
+        self.calcDistance(box, detectedLines, roadWidthH0Px, radar.lane_width_meters)
+        self.calcVelocity(frameTime)
+        self.calcLanePosition(detectedLines)
+        
+        self.updateCount += 1
+        
         if confidence > self.maxConfidence:
             self.maxConfidence = confidence
 

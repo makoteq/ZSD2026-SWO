@@ -61,8 +61,15 @@ class Radar:
         self.relativePath: str = relativePath
         self.pointsSwap: pd.DataFrame = pd.DataFrame()
         self.currentTime: float = INITIAL_TIME_VALUE
+        self.lane_width_meters: float = 0.0
         self.t0: float = start_time
+        self.minX: float = 0.0
+        self.maxX: float = 0.0
+        self.minY: float = 0.0
+        self.maxY: float = 0.0
         self.loadData()
+        self.adjustPoints(SENSOR_PITCH_DEG, SENSOR_YAW_DEG, SENSOR_ROLL_DEG, CAMERA_HEIGHT_OFFSET)
+   
 
     def loadData(self) -> None:
         basePath: str = os.path.dirname(os.path.abspath(__file__))
@@ -107,16 +114,13 @@ class Radar:
         fig: plt.Figure = plt.figure(figsize=(FIG_SIZE_X, FIG_SIZE_Y))
         ax = fig.add_subplot(111, projection='3d')
         
-        fullMinX: float = self.dataFrame[X_COLUMN].min() - CORNER_OFFSET
-        fullMaxX: float = self.dataFrame[X_COLUMN].max() + CORNER_OFFSET
-        fullMinY: float = self.dataFrame[Y_COLUMN].min()
-        fullMaxY: float = self.dataFrame[Y_COLUMN].max()
-        midX: float = (fullMinX + fullMaxX) / 2
+        
+        midX: float = (self.minX + self.maxX) / 2
         groundZ: float = 0.0
 
-        ax.plot([fullMinX, fullMinX], [fullMinY, fullMaxY], [groundZ, groundZ], color=LINE_COLOR, linewidth=LINE_WIDTH_VIS, label="Left Boundary")
-        ax.plot([fullMaxX, fullMaxX], [fullMinY, fullMaxY], [groundZ, groundZ], color=LINE_COLOR, linewidth=LINE_WIDTH_VIS, label="Right Boundary")
-        ax.plot([midX, midX], [fullMinY, fullMaxY], [groundZ, groundZ], color=CENTERLINE_COLOR, linestyle="--", linewidth=LINE_WIDTH_VIS, label="Centerline")
+        ax.plot([self.minX, self.minX], [self.minY, self.maxY], [groundZ, groundZ], color=LINE_COLOR, linewidth=LINE_WIDTH_VIS, label="Left Boundary")
+        ax.plot([self.maxX, self.maxX], [self.minY, self.maxY], [groundZ, groundZ], color=LINE_COLOR, linewidth=LINE_WIDTH_VIS, label="Right Boundary")
+        ax.plot([midX, midX], [self.minY, self.maxY], [groundZ, groundZ], color=CENTERLINE_COLOR, linestyle="--", linewidth=LINE_WIDTH_VIS, label="Centerline")
 
         if not self.pointsSwap.empty:
             uniqueClusters: np.ndarray = self.pointsSwap[CLUSTER_COLUMN].unique()
@@ -136,8 +140,8 @@ class Radar:
                     label=f"Cluster {clusterId}"
                 )
 
-        ax.set_xlim(fullMinX - 1, fullMaxX + 1)
-        ax.set_ylim(fullMinY - 5, fullMaxY + 5)
+        ax.set_xlim(self.minX - 1, self.maxX + 1)
+        ax.set_ylim(self.minY - 5, self.maxY + 5)
         ax.set_zlim(Z_AXIS_LIMIT_MIN, Z_AXIS_LIMIT_MAX)
         
         ax.set_xlabel("X (Width)")
@@ -167,10 +171,50 @@ class Radar:
         deltaY: float = float(farLowest[COLUMN_Y].mean() - closeLowest[COLUMN_Y].mean())
         return float(np.degrees(np.arctan2(deltaZ, deltaY)))
 
+    def findLane(self): 
+        if self.dataFrame.empty:
+            return {"minX": 0.0, "maxX": 0.0, "minY": 0.0, "maxY": 0.0}
+
+        minX: float = float(self.dataFrame[X_COLUMN].min() - CORNER_OFFSET)
+        maxX: float = float(self.dataFrame[X_COLUMN].max() + CORNER_OFFSET)
+        minY: float = float(self.dataFrame[Y_COLUMN].min())
+        maxY: float = float(self.dataFrame[Y_COLUMN].max())
+
+        self.minX = minX
+        self.maxX = maxX
+        self.minY = minY
+        self.maxY = maxY
+
+        self.lane_width_meters = maxX - minX
+
+
+    def calculateYaw(self, closeWindow: float = 20.0, farWindow: float = 20.0) -> float:
+        if self.dataFrame.empty:
+            return 0.0
+
+        y: pd.Series = self.dataFrame[COLUMN_Y]
+        yMin: float = float(y.min())
+        yMax: float = float(y.max())
+
+        closeMask = (y >= yMin) & (y <= yMin + closeWindow)
+        farMask = (y >= yMax - farWindow) & (y <= yMax)
+
+        closePoints: pd.DataFrame = self.dataFrame[closeMask]
+        farPoints: pd.DataFrame = self.dataFrame[farMask]
+
+        if closePoints.empty or farPoints.empty:
+            return 0.0
+
+        deltaX: float = float(farPoints[COLUMN_X].median() - closePoints[COLUMN_X].median())
+        deltaY: float = float(farPoints[COLUMN_Y].median() - closePoints[COLUMN_Y].median())
+
+        return float(np.degrees(np.arctan2(deltaX, deltaY)))
+
     def adjustPoints(self, pitch: float, yaw: float, roll: float, heightOffset: float) -> None:
         pitchRad: float = np.radians(-pitch)
-        yawRad: float = np.radians(-yaw)
+        yawRad: float = np.radians(-self.calculateYaw())
         rollRad: float = np.radians(-self.calculateRoll())
+        print(f"Calculated Yaw: {np.degrees(yawRad):.2f} degrees, Calculated Roll: {np.degrees(rollRad):.2f} degrees")
         cosP, sinP = np.cos(pitchRad), np.sin(pitchRad)
         cosY, sinY = np.cos(yawRad), np.sin(yawRad)
         cosR, sinR = np.cos(rollRad), np.sin(rollRad)
