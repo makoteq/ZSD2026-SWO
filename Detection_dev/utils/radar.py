@@ -5,6 +5,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN
+from typing import List, Dict
 
 RELATIVE_CSV_PATH = "..\\..\\data\\normal_traffic\\radar_points_world.csv"
 COLUMN_X = "x_sensor"
@@ -67,10 +68,10 @@ class Radar:
         self.maxX: float = 0.0
         self.minY: float = 0.0
         self.maxY: float = 0.0
+        self.clusterCenters: List[Dict[str, float]] = []
         self.loadData()
         self.adjustPoints(SENSOR_PITCH_DEG, SENSOR_YAW_DEG, SENSOR_ROLL_DEG, CAMERA_HEIGHT_OFFSET)
    
-
     def loadData(self) -> None:
         basePath: str = os.path.dirname(os.path.abspath(__file__))
         self.csvPath: str = os.path.abspath(os.path.join(basePath, self.relativePath))
@@ -187,7 +188,6 @@ class Radar:
 
         self.lane_width_meters = maxX - minX
 
-
     def calculateYaw(self, closeWindow: float = 20.0, farWindow: float = 20.0) -> float:
         if self.dataFrame.empty:
             return 0.0
@@ -240,12 +240,18 @@ class Radar:
             # self.t0 = float(self.dataFrame[COLUMN_TIME].min())
             self.currentTime = self.t0
 
-# if __name__ == "__main__":
-#     streetInstance: Street = Street(RELATIVE_CSV_PATH)
-#     streetInstance.adjustPoints(SENSOR_PITCH_DEG, SENSOR_YAW_DEG, SENSOR_ROLL_DEG, CAMERA_HEIGHT_OFFSET)
-#     streetInstance.applyMask(MASK_Z_MIN, MASK_Z_MAX, MASK_Y_MIN, MASK_Y_MAX)
-    
-#     for _ in range(LOOP_ITERATIONS):
-#         streetInstance.step(TIME_STEP_DEFAULT)
-#         streetInstance.clusterPoints()
-#         streetInstance.visualizeClusteredStep()
+    def getClusterCenters(self) -> List[Dict[str, float]]:
+            if self.pointsSwap.empty:
+                return []
+
+            clusterGroups = self.pointsSwap.groupby(CLUSTER_COLUMN)
+            
+            centersDf: pd.DataFrame = clusterGroups.agg({
+                X_COLUMN: 'mean',
+                Y_COLUMN: 'mean',
+                Z_COLUMN: 'mean',
+                COLUMN_VELOCITY: 'mean'
+            }).reset_index()
+
+            self.clusterCenters = centersDf.to_dict(orient='records')
+            return self.clusterCenters

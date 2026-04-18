@@ -93,6 +93,10 @@ if __name__ == "__main__":
                 radar.step(radar_setp)
                 radar.clusterPoints()
                 radar.visualizeClusteredStep()
+                cluster_centers = radar.getClusterCenters()
+
+                for idx, center in enumerate(cluster_centers):
+                    print(f"  Cluster {idx}: X={center['x_corrected']:.2f}m, Y={center['y_corrected']:.2f}m, Z={center['z_corrected']:.2f}m, Velocity={center['radial_velocity']:.2f}m/s")
            
             if frameIndex == 0:
                 ##TODO: replace with auto lane detection
