@@ -15,18 +15,16 @@ class LaneDetector:
             'num_segments': 6,
             'local_density_thresh': 0.20,
             'min_active_segments': 2,
-            'post_aspect_ratio': 4.0,
+            'post_aspect_ratio': 3.0,
             'post_min_solidity': 0.6,
             'max_green_inside': 0.05,
             'max_green_halo': 0.30,
             'green_h_range': (35, 85),
             'green_s_min': 40,
             'display_width': 500,
-
             'cluster_m_tol': 0.10,
             'cluster_b_tol_pct': 0.04,
             'min_line_coverage': 0.10,
-
             'adapt_block_size_base': 81,
             'hough_thresh_base': 20,
             'hough_min_len_base': 30,
@@ -34,7 +32,9 @@ class LaneDetector:
             'post_min_area_base': 20,
             'halo_thickness_base': 15,
             'search_radius_base': 15,
-            'y_step_base': 5
+            'y_step_base': 5,
+            'max_debug_width': 1600,
+            'max_debug_height': 600
         }
 
         if config:
@@ -78,7 +78,7 @@ class LaneDetector:
         cv2.putText(img, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
         return img
 
-    def build_mosaic(self, images, titles, grid_size=(2, 3)):
+    def build_mosaic(self, images, titles, grid_size=(3, 3)):
         rows, cols = grid_size
         grid_rows = []
         target_width = self.config['display_width']
@@ -97,18 +97,7 @@ class LaneDetector:
             grid_rows.append(np.hstack(row_images))
         return np.vstack(grid_rows)
 
-    def process_image(self, original_img, debug=False):
-        orig_h, orig_w = original_img.shape[:2]
-        crop_y = orig_h // 2
-        img = original_img[crop_y:orig_h, :].copy()
-        height, width = img.shape[:2]
-        scaled_params = self.scale_parameters(height, width)
-
-        debug_images, debug_titles = [], []
-        if debug:
-            debug_images.append(img.copy())
-            debug_titles.append("1. ROI")
-
+    def _get_road_mask(self, img, height, width, scaled_params):
         results = self.yolo.predict(img, conf=self.config['yolo_conf'], verbose=False)
         road_mask = np.full((height, width), 255, dtype=np.uint8)
 
@@ -120,15 +109,22 @@ class LaneDetector:
             road_mask = cv2.erode(road_mask, kernel, iterations=1)
 
         y_horizon = np.min(np.where(road_mask > 0)[0]) if np.any(road_mask > 0) else 0
+        return road_mask, y_horizon
 
+    def _get_paint_mask(self, img, road_mask, scaled_params, debug_dict=None):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         blur = cv2.GaussianBlur(gray, (11, 11), 0)
         adaptive_raw = cv2.adaptiveThreshold(
             blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
             scaled_params['adapt_block_size'], self.config['adapt_c']
         )
-        paint_mask = cv2.bitwise_and(adaptive_raw, road_mask)
 
+        if debug_dict is not None:
+            debug_dict['adaptive_raw'] = adaptive_raw
+
+        return cv2.bitwise_and(adaptive_raw, road_mask)
+
+    def _get_verified_mask(self, paint_mask, scaled_params, height, width):
         verified_mask = np.zeros_like(paint_mask)
         lines = cv2.HoughLinesP(
             paint_mask, 1, np.pi / 180, scaled_params['hough_thresh'],
@@ -155,9 +151,13 @@ class LaneDetector:
                     if active_segments >= self.config['min_active_segments']:
                         cv2.line(verified_mask, (int(m * 0 + b), 0), (int(m * height + b), height), 255,
                                  max(5, int(12 * (width / 1280.0))))
+        return verified_mask
 
+    def _filter_blobs(self, img, paint_mask, verified_mask, scaled_params, debug_dict=None):
         raw_lines = cv2.bitwise_and(paint_mask, verified_mask)
+        shape_filtered = np.zeros_like(raw_lines)
         clean_lanes = np.zeros_like(raw_lines)
+
         hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
         green_mask = cv2.inRange(
@@ -184,30 +184,51 @@ class LaneDetector:
             if cv2.contourArea(hull) > 0 and (area / cv2.contourArea(hull)) < self.config['post_min_solidity']:
                 continue
 
+            # Jeśli przejdzie filtry kształtu (pole, proporcje, solidność)
+            cv2.drawContours(shape_filtered, [cnt], -1, 255, -1)
+
             inside_mask = np.zeros_like(raw_lines)
             cv2.drawContours(inside_mask, [cnt], -1, 255, -1)
 
             if cv2.countNonZero(inside_mask) > 0:
                 green_ratio = cv2.countNonZero(cv2.bitwise_and(green_mask, inside_mask)) / cv2.countNonZero(inside_mask)
                 if green_ratio <= self.config['max_green_inside']:
+                    # Jeśli przejdzie filtr braku zieleni
                     cv2.drawContours(clean_lanes, [cnt], -1, 255, -1)
 
-        if debug:
-            debug_images.extend([road_mask.copy(), paint_mask.copy(), clean_lanes.copy()])
-            debug_titles.extend(["2. YOLO Mask", "3. Adaptive Mask", "4. Filtered Blobs"])
+        if debug_dict is not None:
+            debug_dict['raw_lines'] = raw_lines
+            debug_dict['shape_filtered'] = shape_filtered
 
+        return clean_lanes
+
+    def _get_raw_candidates(self, clean_lanes, scaled_params, height, width, y_horizon):
         clean_contours, _ = cv2.findContours(clean_lanes, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         raw_candidates = []
+
         for cnt in clean_contours:
             if len(cnt) < 2:
                 continue
-            [vx, vy, x0, y0] = cv2.fitLine(cnt, cv2.DIST_L2, 0, 0.01, 0.01)
+
+            # ROZWIĄZANIE PROBLEMÓW Z KĄTEM:
+            # 1. Tworzymy czystą maskę tylko dla tego jednego bloba i wypełniamy jego środek
+            blob_mask = np.zeros_like(clean_lanes)
+            cv2.drawContours(blob_mask, [cnt], -1, 255, -1)
+
+            # 2. Pobieramy WSZYSTKIE piksele wewnątrz bloba (masę), a nie tylko obrys
+            internal_pts = cv2.findNonZero(blob_mask)
+
+            # Pomiń, jeśli blob to jakiś mikro-śmieć
+            if internal_pts is None or len(internal_pts) < 10:
+                continue
+
+            # 3. Liczymy fitLine na pełnej masie pikseli - to wymusza prostą idealnie przez środek ciężkości
+            [vx, vy, x0, y0] = cv2.fitLine(internal_pts, cv2.DIST_L2, 0, 0.01, 0.01)
+
             if vy == 0:
                 continue
-            M = cv2.moments(cnt)
-            if M["m00"] == 0:
-                continue
-            m_inv, b_inv = (vx / vy)[0], (int(M["m10"] / M["m00"]) - (vx / vy) * int(M["m01"] / M["m00"]))[0]
+
+            m_inv, b_inv = (vx / vy)[0], (x0 - (vx / vy) * y0)[0]
 
             x_bot = m_inv * height + b_inv
             x_top = m_inv * y_horizon + b_inv
@@ -220,6 +241,9 @@ class LaneDetector:
                         'm': m_inv, 'b': b_inv, 'x_bot': x_bot, 'cov': coverage, 'abs_m': abs(m_inv)
                     })
 
+        return raw_candidates
+
+    def _filter_unique_lines(self, raw_candidates, width):
         unique_lines = []
         for cand in sorted(raw_candidates, key=lambda x: x['cov'], reverse=True):
             is_dup = False
@@ -229,7 +253,9 @@ class LaneDetector:
                     break
             if not is_dup:
                 unique_lines.append(cand)
+        return unique_lines
 
+    def _find_best_group(self, unique_lines, height, width):
         valid_groups = []
         min_lane_width = width * 0.10
         max_lane_width = width * 0.80
@@ -285,24 +311,82 @@ class LaneDetector:
         if not best_group and unique_lines:
             best_group = [max(unique_lines, key=lambda x: x['cov'])]
 
+        return best_group
+
+    def _display_debug(self, img, road_mask, paint_mask, verified_mask, clean_lanes, best_group, scaled_params,
+                       y_horizon, debug_dict):
+        height = img.shape[0]
+
+        final_overlay = img.copy()
+        for i, lane in enumerate(best_group):
+            x_b, x_t = int(lane['x_bot']), int(lane['m'] * y_horizon + lane['b'])
+            cv2.line(final_overlay, (x_b, height), (x_t, y_horizon), (0, 0, 255), scaled_params['line_thick'])
+            cv2.putText(final_overlay, f"L{i + 1}", (x_b - 20, height - 20), cv2.FONT_HERSHEY_SIMPLEX,
+                        scaled_params['font_scale'], (0, 0, 255), 2)
+
+        res_final = cv2.addWeighted(img, 0.7, final_overlay, 0.8, 0)
+        res_final[clean_lanes > 0] = [0, 255, 0]
+
+        debug_images = [
+            img.copy(),
+            road_mask.copy(),
+            debug_dict.get('adaptive_raw', np.zeros_like(road_mask)),
+            paint_mask.copy(),
+            verified_mask.copy(),
+            debug_dict.get('raw_lines', np.zeros_like(road_mask)),
+            debug_dict.get('shape_filtered', np.zeros_like(road_mask)),
+            clean_lanes.copy(),
+            res_final
+        ]
+
+        debug_titles = [
+            "1. Original",
+            "2. Yolo mask",
+            "3. Adaptive mask",
+            "4. Combined mask",
+            "5. Vertical Density Filter (Hough)",
+            "6. Candidates",
+            "7. Shape Filter",
+            "8. Color Filter",
+            "9. Result"
+        ]
+
+        mosaic = self.build_mosaic(debug_images, debug_titles, grid_size=(3, 3))
+
+        max_w = self.config['max_debug_width']
+        max_h = self.config['max_debug_height']
+        h, w = mosaic.shape[:2]
+
+        if h > max_h or w > max_w:
+            scale = min(max_w / w, max_h / h)
+            mosaic = cv2.resize(mosaic, (int(w * scale), int(h * scale)))
+
+        cv2.namedWindow("Debug Panel 3x3", cv2.WINDOW_NORMAL)
+        cv2.imshow("Debug Panel 3x3", mosaic)
+
+    def process_image(self, original_img, debug=False):
+        orig_h, orig_w = original_img.shape[:2]
+        crop_y = orig_h // 2
+        img = original_img[crop_y:orig_h, :].copy()
+        height, width = img.shape[:2]
+        scaled_params = self.scale_parameters(height, width)
+
+        debug_dict = {} if debug else None
+
+        road_mask, y_horizon = self._get_road_mask(img, height, width, scaled_params)
+        paint_mask = self._get_paint_mask(img, road_mask, scaled_params, debug_dict)
+        verified_mask = self._get_verified_mask(paint_mask, scaled_params, height, width)
+        clean_lanes = self._filter_blobs(img, paint_mask, verified_mask, scaled_params, debug_dict)
+
+        raw_candidates = self._get_raw_candidates(clean_lanes, scaled_params, height, width, y_horizon)
+        unique_lines = self._filter_unique_lines(raw_candidates, width)
+        best_group = self._find_best_group(unique_lines, height, width)
+
         if debug:
-            final_overlay = img.copy()
-            for i, lane in enumerate(best_group):
-                x_b, x_t = int(lane['x_bot']), int(lane['m'] * y_horizon + lane['b'])
-                cv2.line(final_overlay, (x_b, height), (x_t, y_horizon), (0, 0, 255), scaled_params['line_thick'])
-                cv2.putText(final_overlay, f"L{i + 1}", (x_b - 20, height - 20), cv2.FONT_HERSHEY_SIMPLEX,
-                            scaled_params['font_scale'], (0, 0, 255), 2)
+            self._display_debug(img, road_mask, paint_mask, verified_mask, clean_lanes, best_group, scaled_params,
+                                y_horizon, debug_dict)
 
-            debug_images.append(final_overlay)
-            debug_titles.append("5. Intersection Check")
-            res = cv2.addWeighted(img, 0.7, final_overlay, 0.8, 0)
-            res[clean_lanes > 0] = [0, 255, 0]
-            debug_images.append(res)
-            debug_titles.append("6. FINAL RESULT")
-
-            cv2.imshow("Debug Panel", self.build_mosaic(debug_images, debug_titles))
-
-        return best_group, y_horizon
+        return best_group
 
     def draw_lanes(self, original_img, lines):
         result_img = original_img.copy()
