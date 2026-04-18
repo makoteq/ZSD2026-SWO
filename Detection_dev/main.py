@@ -1,5 +1,4 @@
 import os
-import time
 import torch
 import cv2
 import numpy as np
@@ -57,23 +56,6 @@ WINDOW_NAME = "Traffic Analysis"
 WAIT_KEY_MS = 1
 EXIT_KEY = ord('q')
 
-DEPTH_CMAP: Final[str] = "magma"
-DEPTH_TITLE: Final[str] = "MiDaS Depth Map"
-COLORBAR_LABEL: Final[str] = "Relative Depth Intensity"
-FIG_SIZE_DEPTH: Final[tuple[int, int]] = (10, 6)
-
-
-def drawCustomBox(annotatedFrame: np.ndarray, boxXyxy: np.ndarray, trackId: int, conf: float, carType: str) -> None:
-    x1, y1, x2, y2 = map(int, boxXyxy)
-    labelText = f"{carType} {trackId} | {conf:.2f}"
-
-    cv2.rectangle(annotatedFrame, (x1, y1), (x2, y2), BBOX_COLOR, LINE_THICKNESS)
-
-    (textWidth, textHeight), _ = cv2.getTextSize(labelText, cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, FONT_THICKNESS)
-    cv2.rectangle(annotatedFrame, (x1, y1 - textHeight - 5), (x1 + textWidth, y1), BBOX_COLOR, -1)
-    cv2.putText(annotatedFrame, labelText, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (0, 0, 0), FONT_THICKNESS)
-
-
 if __name__ == "__main__":
     script_dir = Path(__file__).resolve().parent
     model = YOLO(YOLO_MODEL_PATH)
@@ -99,8 +81,6 @@ if __name__ == "__main__":
     out = cv2.VideoWriter(OUTPUT_VIDEO_PATH, fourcc, int(fps), (frameWidth, frameHeight))
     
     carsDict: Dict[int, Car] = {}
-    detected_lines = []
-    y_horizon = 0
     frameIndex = 0
     roadWidthH0Px = 0.0
     
