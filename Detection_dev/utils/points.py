@@ -3,39 +3,23 @@ from pathlib import Path
 from typing import Any
 
 
-def _line_equation_from_points(start: list[int], end: list[int]) -> dict[str, Any]:
-	
-	# - canonical form: A*x + B*y + C = 0
-	# - slope form: y = m*x + b
-
+def _line_params_from_points(start: list[int], end: list[int]) -> tuple[float, float] | None:
 	x1, y1 = start
 	x2, y2 = end
 
-	a = y2 - y1
-	b = x1 - x2
-	c = x2 * y1 - x1 * y2
+	if y1 == y2:
+		return None
 
-	equation: dict[str, Any] = {
-		"A": a,
-		"B": b,
-		"C": c,
-		"standard_form": f"{a}*x + {b}*y + {c} = 0",
-	}
-
-	if x1 == x2:
-		equation["x"] = x1
-		equation["slope_intercept"] = None
-	else:
-		m = (y2 - y1) / (x2 - x1)
-		intercept = y1 - m * x1
-		equation["m"] = m
-		equation["b"] = intercept
-		equation["slope_intercept"] = f"y = {m}*x + {intercept}"
-
-	return equation
+	m = (x2 - x1) / (y2 - y1)
+	intercept = x1 - m * y1
+	return float(m), float(intercept)
 
 
-def build_lines_equations(lines_json: str | Path | dict[str, Any]) -> dict[str, Any]:
+def _x_bottom_from_points(start: list[int], end: list[int]) -> float:
+	return float(start[0] if start[1] >= end[1] else end[0])
+
+
+def build_lines_equations(lines_json: str | Path | dict[str, Any]) -> list[dict[str, float]]:
 
 	if isinstance(lines_json, (str, Path)):
 		with open(lines_json, "r", encoding="utf-8") as file:
@@ -43,17 +27,28 @@ def build_lines_equations(lines_json: str | Path | dict[str, Any]) -> dict[str, 
 	else:
 		data = lines_json
 
-	result: dict[str, Any] = {
-		"passes_threshold": data.get("passes_threshold"),
-		"equations": {},
-	}
+	detected_lines: list[dict[str, float]] = []
 
 	for line_name in ("left_line", "right_line", "middle_line"):
-		line = data[line_name]
-		result["equations"][line_name] = _line_equation_from_points(
-			line["start"],
-			line["end"],
+		line = data.get(line_name)
+		if not line:
+			continue
+
+		line_params = _line_params_from_points(line["start"], line["end"])
+		if line_params is None:
+			continue
+
+		m, intercept = line_params
+		x_bot = _x_bottom_from_points(line["start"], line["end"])
+
+		detected_lines.append(
+			{
+				"m": m,
+				"b": intercept,
+				"x_bot": x_bot,
+				"abs_m": abs(m),
+			}
 		)
 
-	return result
+	return detected_lines
 
