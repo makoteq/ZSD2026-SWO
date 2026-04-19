@@ -4,7 +4,6 @@ import numpy as np
 from .radar import Radar
 from typing import Dict, List, Tuple, Any, Final, Union
 
-
 IMAGE_WIDTH: Final[int] = 128
 IMAGE_HEIGHT: Final[int] = 128
 IMG_SIZE: Final[Tuple[int, int]] = (IMAGE_WIDTH, IMAGE_HEIGHT)
@@ -44,6 +43,9 @@ class Car:
         self.radarVel: List[velocity] = []
         self.pos: List[position] = []
         self.velo: List[velocity] = []
+        
+        self.posDifference: position = position(x=0.0, y=0.0, frame=-1)
+        self.veloDifference: velocity = velocity(v=0.0, frame=-1)
 
         self.radarPos.append(position(x=0.0, y=0.0, frame=-1))
         self.radarVel.append(velocity(v=0.0, frame=-1))
@@ -68,7 +70,7 @@ class Car:
         self.imgSize = 0.0
         self.radar = None
 
-    def calcDistance(self, detectedLines: List[Any], roadWidthH0Px: float, roadWidthMeters: float) -> None:
+    def calcDistance(self, detectedLines: List[Any], roadWidthH0Px: float, roadWidthMeters: float) -> float:
         yBottom = self.y + (self.h / 2.0)
         xLeft = (detectedLines[0]['m'] * yBottom) + detectedLines[0]['b']
         xRight = (detectedLines[1]['m'] * yBottom) + detectedLines[1]['b']
@@ -78,37 +80,23 @@ class Car:
             return 0.0
         
         distance = (roadWidthMeters * roadWidthH0Px) * self.fov / pixelWidthAtY
-
-        return distance
+        return float(distance)
     
-    def calcPosition(self, detectedLines: List[Any] , roadWidthH0Px: float) -> float:
+    def calcPosition(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:
         yBottom = self.y + (self.h / 2.0)
         xCar = self.x
         
         xLeft = (detectedLines[0]['m'] * yBottom) + detectedLines[0]['b']
         xRight = (detectedLines[1]['m'] * yBottom) + detectedLines[1]['b']
-        
         laneWidthPx = xRight - xLeft
         
-        if abs(laneWidthPx) < 1e-6:
-            relativePos = 0.5
-        else:
-            relativePos = (xCar - xLeft) / laneWidthPx
-
+        relativePos = (xCar - xLeft) / laneWidthPx if abs(laneWidthPx) > 1e-6 else 0.5
         laneWidthMeters = abs(self.radar.maxX - self.radar.minX)
+
         x = self.radar.minX + (relativePos * laneWidthMeters)
-        
         y = self.calcDistance(detectedLines, roadWidthH0Px, laneWidthMeters)
 
         return x, y
-
-    # def calcVelocity(self, frameTime: float) -> float:
-    #     if len(self.distance) < 2 or frameTime <= 0:
-    #         self.velocity.append(0.0)
-    #         return 0.0
-            
-    #     instantVelocity = abs(self.distance[-1] - self.distance[-2]) / frameTime
-    #     self.velocity.append(instantVelocity)
 
     def checkType(self, frame: np.ndarray, cnnModel: Any) -> Tuple[str, float, np.ndarray, float]:
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -117,17 +105,16 @@ class Car:
         imgBatch = np.expand_dims(imgArr, axis=0)
 
         classProbs, kPred = cnnModel.predict(imgBatch, verbose=0)
-
         classProbs = classProbs[0]
-        kPred = float(kPred[0][0])
+        kValue = float(kPred[0][0])
         predIdx = int(np.argmax(classProbs))
         confidence = float(classProbs[predIdx])
         category = CATEGORY_MAP[predIdx]
 
-        return category, confidence, classProbs, kPred
+        return category, confidence, classProbs, kValue
 
     def update(self, box: Tuple[float, float, float, float], confidence: float, frame: np.ndarray, frameIndex: int, cnnModel: Any, 
-               detectedLines: Any, roadWidthH0Px: float, fov: float, frameTime: float,  imgSize: int, radar: Radar) -> None:
+                detectedLines: Any, roadWidthH0Px: float, fov: float, frameTime: float, imgSize: int, radar: Radar) -> None:
         
         self.x, self.y, self.w, self.h = box
         self.history.append((float(self.x), float(self.y)))
@@ -139,20 +126,36 @@ class Car:
         self.imgSize = imgSize 
         self.fov = fov
         self.radar = radar
-        # self.calcVelocity(frameTime)
-        x, y = self.calcPosition(detectedLines, roadWidthH0Px)
-        pos = position(x=x, y=y + CAR_RADAR_OFFSET, frame=frameIndex)
-        self.pos.append(pos)
+
+        rawX, rawY = self.calcPosition(detectedLines, roadWidthH0Px)
+        currentV = self.velo[-1].v
+
+        if self.radarPos[-1].frame == frameIndex:
+            latestRadarPos = self.radarPos[-1]
+            latestRadarVel = self.radarVel[-1]
+
+            diffX = latestRadarPos.x - rawX
+            diffY = latestRadarPos.y - (rawY + CAR_RADAR_OFFSET)
+            self.posDifference = position(x=diffX, y=diffY, frame=frameIndex)
+
+            currentV = latestRadarVel.v
+            self.veloDifference = velocity(v=0.0, frame=frameIndex)
+
+        finalPos = position(
+            x=rawX + self.posDifference.x,
+            y=rawY + CAR_RADAR_OFFSET + self.posDifference.y,
+            frame=frameIndex
+        )
         
+        self.pos.append(finalPos)
+        self.velo.append(velocity(v=currentV, frame=frameIndex))
+
         self.updateCount += 1
         
         if confidence > self.maxConfidence:
             self.maxConfidence = confidence
-
-            x1 = int(self.x - self.w / 2)
-            y1 = int(self.y - self.h / 2)
-            x2 = int(self.x + self.w / 2)
-            y2 = int(self.y + self.h / 2)
+            x1, y1 = int(self.x - self.w / 2), int(self.y - self.h / 2)
+            x2, y2 = int(self.x + self.w / 2), int(self.y + self.h / 2)
 
             crop = frame[max(0, y1):min(frame.shape[0], y2), max(0, x1):min(frame.shape[1], x2)]
             if crop.size > 0:
@@ -164,4 +167,4 @@ class Car:
         self.breakingDistance = self.calcBreakingDistance()
 
     def calcBreakingDistance(self) -> float:
-        return 0
+        return 0.0
