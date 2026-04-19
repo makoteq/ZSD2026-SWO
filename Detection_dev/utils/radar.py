@@ -250,7 +250,7 @@ class Radar:
                 X_COLUMN: 'mean',
                 Y_COLUMN: 'mean',
                 Z_COLUMN: 'mean',
-                COLUMN_VELOCITY: 'mean'
+                COLUMN_VELOCITY: lambda x: x.mean() * -1
             }).reset_index()
 
             self.clusterCenters = centersDf.to_dict(orient='records')

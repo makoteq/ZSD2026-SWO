@@ -13,7 +13,8 @@ from typing import Final, List
 from algorithms.lane_detection.lane_detector import LaneDetector
 from utils.car import Car
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
-from utils.utils import  drawCustomBox
+from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars
+import matplotlib.pyplot as plt
 
 
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
@@ -26,8 +27,9 @@ OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
 
 # yolo
 ROAD_WIDTH_METERS = 7.0
-FOV = 30.0
-START_TIME = 10
+FOV = 20.0
+
+START_TIME = 12
 CONF_THRESHOLD = 0.8
 IMGSZ = 800
 ALLOWED_CLASSES_IDS = [0]
@@ -84,29 +86,28 @@ if __name__ == "__main__":
 
     try:
         while cap.isOpened():
+     
             success, frame = cap.read()
             if not success: break
 
-            if frameIndex % RADAR_STEP_INTERVAL == 0:
-                radar_setp = frame_time * RADAR_STEP_INTERVAL
-                print(f"Radar step: {radar_setp:.2f}s, Frame index: {frameIndex}")
-                radar.step(radar_setp)
-                radar.clusterPoints()
-                radar.visualizeClusteredStep()
-                cluster_centers = radar.getClusterCenters()
-
-                for idx, center in enumerate(cluster_centers):
-                    print(f"  Cluster {idx}: X={center['x_corrected']:.2f}m, Y={center['y_corrected']:.2f}m, Z={center['z_corrected']:.2f}m, Velocity={center['radial_velocity']:.2f}m/s")
-           
             if frameIndex == 0:
                 ##TODO: replace with auto lane detection
                 detected_lines = [{'m': -0.608171, 'b': 763.608171, 'x_bot': 106.783658, 'abs_m': 0.608171}, {'m': 0.605019, 'b': 1157.789963, 'x_bot': 1811.210037, 'abs_m': 0.605019}]
-
                 y=0
                 xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
                 xRight = (detected_lines[1]['m'] * y) + detected_lines[1]['b']
                 road_width_h0_px = abs(xRight - xLeft)
 
+            if frameIndex % RADAR_STEP_INTERVAL == 0:
+                radar_setp = frame_time * RADAR_STEP_INTERVAL
+                radar.step(radar_setp)
+                radar.clusterPoints()
+                # radar.visualizeClusteredStep()
+                clusterCenters = radar.getClusterCenters()
+                plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters)
+                matchClustersToCars(carsDict, clusterCenters, frameIndex)
+                
+           
             results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
             annotatedFrame = frame.copy()
 
@@ -136,7 +137,7 @@ if __name__ == "__main__":
                         radar
                     )
 
-                    drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.type, car.distance[-1], car.velocity[-1])
+                    drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.type, car.pos[-1].x, car.pos[-1].y, car.velo[-1].v)
 
                     points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
                     cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
