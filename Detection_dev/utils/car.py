@@ -64,7 +64,7 @@ class Car:
         self.updateCount = 0
         self.type = "unknown"
         self.mass = 0.0 ##TODO dodać methode która zminia mase ze względy na
-        self.deaccelaretion ##TODO dodać methode która daje deacceleracje samochodu 
+        self.deaccelaretion = 0.0 ##TODO dodać methode która daje deacceleracje samochodu 
         self.breakingDistance = 0.0
         self.fov = 0.0
  
@@ -154,7 +154,7 @@ class Car:
         self.pos.append(finalPos)
         self.velo.append(velocity(v=currentV, frame=frameIndex))
 
-        self.breakingDistance()
+        # self.breakingDistance()
 
         self.updateCount += 1
         
