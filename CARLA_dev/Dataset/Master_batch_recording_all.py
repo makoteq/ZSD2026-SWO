@@ -3,20 +3,26 @@ import os
 import cv2
 import numpy as np
 import csv
-import time
-import random
 import traceback
 from datetime import datetime
 
+# Wyciszenie interfejsu graficznego dla Matplotlib, aby uniknąć błędów wątków
+import matplotlib
+matplotlib.use('Agg')
+
 import s_single_speeding
 import s_pull_over
+import s_normal_traffic
+import s_overtake
+
 #sensor loc
 #todo remove const and add random
 SENSOR_X = 181.0
 SENSOR_Y = 107.0
 SENSOR_Z = 6.0
 SENSOR_YAW = 180.0
-SENSOR_PITCH = -5.0
+CAMERA_PITCH = -12.0
+RADAR_PITCH = -8.0
 #debug lines                #todo find a better way to disp them
 DRAW_DEBUG_LINES = True
 SIDE_LEFT_Y = 111.0
@@ -30,46 +36,32 @@ SIDE_LINE_THICKNESS = 0.05
 #scenarios------------------------------------------------------------------------------
 SCENARIOS_TO_RUN=[
     #standard scenarios:
-    #("normal_traffic", scenario_normal_traffic, "Normal Traffic"),
-    #("single_speeding", s_single_speeding, "Single Speeding"),
+    ("normal_traffic", s_normal_traffic, "Normal Traffic"),
+    ("single_speeding", s_single_speeding, "Single Speeding"),
     #("speeding", scenario_speeding, "Speeding"),
     #("lane_change", scenario_lane_change, "Lane Change"),
-    #("overtaking", scenario_overtaking, "Overtaking"),
+    ("overtaking", s_overtake, "Overtaking"),
     #anomalys:
     ("pull_over", s_pull_over, "Pull Over To Shoulder"),
 ]
-SAMPLES_PER_SCENARIO = 1
+SAMPLES_PER_SCENARIO = 3
 RECORD_DURATION_SEC = 30.0      #for normal traffic only
-#weather -----------------------------------------------------------------------------
-WEATHER_PRESETS = {
-    '1':  ('ClearNoon',            carla.WeatherParameters.ClearNoon),
-    '2':  ('ClearSunset',          carla.WeatherParameters.ClearSunset),
-    '3':  ('CloudyNoon',           carla.WeatherParameters.CloudyNoon),
-    '4':  ('CloudySunset',         carla.WeatherParameters.CloudySunset),
-    '5':  ('WetNoon',              carla.WeatherParameters.WetNoon),
-    '6':  ('WetSunset',            carla.WeatherParameters.WetSunset),
-    '7':  ('MidRainyNoon',         carla.WeatherParameters.MidRainyNoon),
-    '8':  ('MidRainSunset',        carla.WeatherParameters.MidRainSunset),
-    '9':  ('HardRainNoon',         carla.WeatherParameters.HardRainNoon),
-    '10': ('HardRainSunset',       carla.WeatherParameters.HardRainSunset),
-    '11': ('SoftRainNoon',         carla.WeatherParameters.SoftRainNoon),
-    '12': ('SoftRainSunset',       carla.WeatherParameters.SoftRainSunset),
-    '13': ('ClearNight',           carla.WeatherParameters.ClearNight),
-    '14': ('CloudyNight',          carla.WeatherParameters.CloudyNight),
-    '15': ('WetNight',             carla.WeatherParameters.WetNight),
-    '16': ('SoftRainNight',        carla.WeatherParameters.SoftRainNight),
-    '17': ('MidRainyNight',        carla.WeatherParameters.MidRainyNight),
-    '18': ('HardRainNight',        carla.WeatherParameters.HardRainNight),
-}
-WEATHER_TAGS = {
-    "day": "1",
-    "night": "13",
-    "rain": "9",        #todo fix and shorten the weather situation
-    "fog": "3",
-}
 
-current_weather_name = 'ClearNoon'
-WEATHER_PLAN = ["day"]*SAMPLES_PER_SCENARIO
+#weather -----------------------------------------------------------------------------
+WEATHER_CONFIG = {
+    "day": carla.WeatherParameters.ClearNoon,
+    "rain": carla.WeatherParameters.HardRainNoon,
+    "fog": carla.WeatherParameters(
+        cloudiness=80.0,
+        precipitation=0.0,
+        precipitation_deposits=0.0,
+        wind_intensity=10.0,
+        sun_altitude_angle=45.0,
+        fog_density=40.0,
+        fog_distance=15.0,
+        fog_falloff=2.0
+    )
+}
 
 #radar ---------------------------------------------------------------------------------
 RADAR_PROFILE_NAME = "TRUGRD_LR_like"
@@ -90,10 +82,7 @@ radar_actor = None
 video_writer = None
 radar_csv_file = None
 radar_csv_writer = None
-output_dir = None
 video_path = None
-radar_log_path = None
-session_log_path = None
 #-----------------------------------------------------------------------------------------
 
 #destroys cars safely, if code tried to destroy a none existent actor carla would break
@@ -101,21 +90,12 @@ def safe_destroy_actor(actor):
     if actor is None:
         return
     try:
-        actor_id = actor.id
-    except Exception:
-        pass
-
-    try:
         actor.stop()
     except Exception:
         pass
 
     try:
         actor.destroy()
-    except RuntimeError as err:
-        msg = str(err).lower()
-        if("not found" in msg) or ("already destroyed" in msg):
-            return
     except Exception:
         pass
 
@@ -127,37 +107,20 @@ def safe_destroy_vehicles_batch(world, client):
             return
 
         cmds = [carla.command.DestroyActor(x) for x in ids]
-        responses = client.apply_batch_sync(cmds, True)
-
-        for r in responses:
-            if r.error:
-                err = str(r.error).lower()
-                if "not found" in err or "already destroyed" in err:
-                    continue
-                print(f"[WARN] batch destroy error: {r.error}")
+        client.apply_batch_sync(cmds, True)
     except Exception as e:
         print(f"[WARN] safe_destroy_vehicles_batch failed: {e}")
 
-
 #recording and misc ---------------------------------------------------------------------
 
-def weather_for_run(global_run_idx: int):
-    tag = WEATHER_PLAN[(global_run_idx - 1) %len(WEATHER_PLAN)]
-    preset_key = WEATHER_TAGS.get(tag, "1")
-    name, preset = WEATHER_PRESETS[preset_key]
-    return tag, name, preset
-
-def start_recording(run_dir: str):
-    global video_writer, radar_csv_file, radar_csv_writer
-    global output_dir, video_path, radar_log_path
+def start_recording(run_dir: str, weather_name: str):
+    global video_writer, radar_csv_file, radar_csv_writer, video_path
 
     stop_recording()
+    os.makedirs(run_dir, exist_ok=True)
 
-    output_dir = run_dir
-    os.makedirs(output_dir, exist_ok=True)
-
-    radar_log_path = os.path.join(output_dir, "radar_points_world.csv")
-    video_path = os.path.join(output_dir, "rgb.mp4")
+    radar_log_path = os.path.join(run_dir, f"radar_{weather_name}.csv")
+    video_path = os.path.join(run_dir, f"video_{weather_name}.mp4")
 
     radar_csv_file = open(radar_log_path, "w", newline="", encoding="utf-8")
     radar_csv_writer = csv.writer(radar_csv_file)
@@ -168,11 +131,8 @@ def start_recording(run_dir: str):
         "x_world", "y_world", "z_world"
     ])
 
-    video_writer = None
-
 def stop_recording():
-    global video_writer, radar_csv_file, radar_csv_writer
-    global output_dir, video_path, radar_log_path
+    global video_writer, radar_csv_file, radar_csv_writer, video_path
 
     if radar_csv_file is not None:
         try:
@@ -189,9 +149,7 @@ def stop_recording():
             pass
         video_writer = None
 
-    output_dir = None
     video_path = None
-    radar_log_path = None
 
 #callbacks for radar and camera ----------------------------------------------------------------
 
@@ -276,35 +234,34 @@ def apply_radar_preset(radar_bp, preset_name: str):
     for k, v in preset.items():
         radar_bp.set_attribute(k, v)
 
-
 def setup_environment(client):
     world = client.load_world('Town02')
-    world.set_weather(carla.WeatherParameters.CloudySunset)
-
+    
     labels_to_hide = [
         carla.CityObjectLabel.Buildings,
         carla.CityObjectLabel.Fences,
         carla.CityObjectLabel.Vegetation,
         carla.CityObjectLabel.Other,
         carla.CityObjectLabel.Walls,
-        # carla.CityObjectLabel.Poles,
         carla.CityObjectLabel.GuardRail
     ]
     all_to_hide = [obj.id for label in labels_to_hide for obj in world.get_environment_objects(label)]
     world.enable_environment_objects(all_to_hide, False)
 
+    draw_debug_side_lines(world)
+
     spectator = world.get_spectator()
     spectator.set_transform(carla.Transform(
         carla.Location(x=SENSOR_X, y=SENSOR_Y, z=SENSOR_Z),
-        carla.Rotation(pitch=SENSOR_PITCH, yaw=SENSOR_YAW)
+        carla.Rotation(pitch=CAMERA_PITCH, yaw=SENSOR_YAW)
     ))
 
     blueprint_library = world.get_blueprint_library()
 
     camera_bp = blueprint_library.find("sensor.camera.rgb")
-    camera_bp.set_attribute("fov", "20.0")
-    camera_bp.set_attribute("image_size_y", "1080")
-    camera_bp.set_attribute("image_size_x", "1920")
+    camera_bp.set_attribute("fov", "14.0")
+    camera_bp.set_attribute("image_size_y", "1920")
+    camera_bp.set_attribute("image_size_x", "1080")
     camera_bp.set_attribute("sensor_tick", str(CAMERA_TICK))
     camera_bp.set_attribute("bloom_intensity", "0.0")
     camera_bp.set_attribute("exposure_mode", "manual")
@@ -316,17 +273,21 @@ def setup_environment(client):
 
     return world, blueprint_library, camera_bp, radar_bp
 
-
-def spawn_sensors_fixed(world, camera_bp, radar_bp):    #todo remove const and add random
+def spawn_sensors_fixed(world, camera_bp, radar_bp):
     global radar_actor
 
-    t = carla.Transform(
+    t_camera = carla.Transform(
         carla.Location(x=SENSOR_X, y=SENSOR_Y, z=SENSOR_Z),
-        carla.Rotation(pitch=SENSOR_PITCH, yaw=SENSOR_YAW)
+        carla.Rotation(pitch=CAMERA_PITCH, yaw=SENSOR_YAW)
+    )
+    
+    t_radar = carla.Transform(
+        carla.Location(x=SENSOR_X, y=SENSOR_Y, z=SENSOR_Z),
+        carla.Rotation(pitch=RADAR_PITCH, yaw=SENSOR_YAW)
     )
 
-    camera = world.spawn_actor(camera_bp, t)
-    radar = world.spawn_actor(radar_bp, t)
+    camera = world.spawn_actor(camera_bp, t_camera)
+    radar = world.spawn_actor(radar_bp, t_radar)
 
     radar_actor = radar
     radar.listen(safe_callback_wrapper(radar_callback))
@@ -334,144 +295,58 @@ def spawn_sensors_fixed(world, camera_bp, radar_bp):    #todo remove const and a
 
     return camera, radar
 
-#logs -----------------------------------------------------------------------------------
-
-def init_batch_output():
-    global session_log_path
-
-    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    root_dir = f"batch_output_{session_id}"
-    os.makedirs(root_dir, exist_ok=True)
-
-    session_log_path = os.path.join(root_dir, "run_log.csv")
-    with open(session_log_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow([
-            "run_timestamp",
-            "global_run_index",
-            "scenario_key",
-            "scenario_label",
-            "sample_index",
-            "run_dir",
-            "weather_tag",
-            "weather_name",
-            "radar_profile",
-            "sensor_x",
-            "sensor_y",
-            "sensor_z",
-            "sensor_yaw",
-            "duration_sec",
-            "status",
-            "error"
-        ])
-    return root_dir
-
-def append_run_log(row):
-    with open(session_log_path, "a", newline="", encoding="utf-8") as f:
-        csv.writer(f).writerow(row)
-
 #main =====================================================================================
 
 def main():
     client = carla.Client("localhost", 2000)
     client.set_timeout(20.0)
 
-    camera = None
-    radar = None
-
     try:
         world, blueprint_library, camera_bp, radar_bp = setup_environment(client)
-        root_dir = init_batch_output()
-
-        total_runs = len(SCENARIOS_TO_RUN) * SAMPLES_PER_SCENARIO
-        global_idx = 0
+        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        root_dir = f"recordings_{session_id}"
 
         print("\n" + "=" * 70)
-        print(f"BATCH start | scenarios={len(SCENARIOS_TO_RUN)} | samples={SAMPLES_PER_SCENARIO} | total={total_runs}")
+        print(f"BATCH start | scenarios={len(SCENARIOS_TO_RUN)} | samples={SAMPLES_PER_SCENARIO}")
         print(f"Radar={RADAR_PROFILE_NAME} | VIDEO_FPS={VIDEO_FPS:.1f} | CAMERA_TICK={CAMERA_TICK}")
         print("=" * 70)
 
         for scenario_key, scenario_module, scenario_label in SCENARIOS_TO_RUN:
-            for sample_idx in range(1, SAMPLES_PER_SCENARIO + 1):
-                global_idx += 1
-                run_dir = os.path.join(root_dir, scenario_key, f"sample_{sample_idx:03d}")
-                os.makedirs(run_dir, exist_ok=True)
+            for case_idx in range(1, SAMPLES_PER_SCENARIO + 1):
+                for weather_name, weather_params in WEATHER_CONFIG.items():
+                    
+                    run_dir = os.path.join(root_dir, scenario_key, f"case_{case_idx}")
+                    print(f"Running: {scenario_label} | Case {case_idx}/{SAMPLES_PER_SCENARIO} | Weather: {weather_name}")
 
-                status = "ok"
-                error_msg = ""
-                t0 = time.time()
+                    try:
+                        safe_destroy_vehicles_batch(world, client)
+                        world.set_weather(weather_params)
+                        
+                        start_recording(run_dir, weather_name)
+                        camera, radar = spawn_sensors_fixed(world, camera_bp, radar_bp)
 
-                print(f"\n[{global_idx}/{total_runs}] {scenario_label} | sample={sample_idx}")
+                        scenario_module.run(
+                            world,
+                            blueprint_library,
+                            duration_sec=RECORD_DURATION_SEC,
+                            output_dir=run_dir
+                        )
 
-                try:
-                    safe_destroy_vehicles_batch(world, client)
-                    stop_recording()
-                    start_recording(run_dir)
+                    except Exception as e:
+                        print(f"[ERROR] {e}")
+                        traceback.print_exc()
 
-                    weather_tag, weather_name, weather_obj = weather_for_run(global_idx)
-                    world.set_weather(weather_obj)
-
-                    for _ in range(3):
-                        world.tick()
-
-                    camera, radar = spawn_sensors_fixed(world, camera_bp, radar_bp)
-
-                    scenario_module.run(
-                        world,
-                        blueprint_library,
-                        duration_sec=RECORD_DURATION_SEC,
-                        output_dir=run_dir
-                    )
-
-                    time.sleep(0.3)
-
-                except Exception as e:
-                    status = "error"
-                    error_msg = str(e)
-                    print(f"[ERROR] {e}")
-                    traceback.print_exc()
-
-                finally:
-                    safe_destroy_actor(camera)
-                    safe_destroy_actor(radar)
-                    camera = None
-                    radar = None
-
-                    safe_destroy_vehicles_batch(world, client)
-                    stop_recording()
-
-                    append_run_log([
-                        datetime.now().isoformat(timespec="seconds"),
-                        global_idx,
-                        scenario_key,
-                        scenario_label,
-                        sample_idx,
-                        run_dir,
-                        weather_tag,
-                        weather_name,
-                        RADAR_PROFILE_NAME,
-                        f"{SENSOR_X:.3f}",
-                        f"{SENSOR_Y:.3f}",
-                        f"{SENSOR_Z:.3f}",
-                        f"{SENSOR_YAW:.1f}",
-                        f"{RECORD_DURATION_SEC:.1f}",
-                        status,
-                        error_msg
-                    ])
+                    finally:
+                        safe_destroy_actor(camera)
+                        safe_destroy_actor(radar)
+                        stop_recording()
 
         print("\nZakończono batch.")
         print(f"Wyniki: {root_dir}")
-        print(f"Log:    {session_log_path}")
 
     except Exception as e:
         print(f"\nBłąd środowiska: {e}")
         traceback.print_exc()
-
-    finally:
-        safe_destroy_actor(camera)
-        safe_destroy_actor(radar)
-        stop_recording()
-
 
 if __name__ == "__main__":
     main()
