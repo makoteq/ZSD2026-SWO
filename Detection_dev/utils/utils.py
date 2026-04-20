@@ -48,34 +48,47 @@ def matchClustersToCars(carsDict: Dict[int, Any], clusterCenters: List[Dict[str,
         
         latestYolo = car.pos[-1]
         for clusterIdx, cluster in enumerate(clusterCenters):
-            distY = abs(latestYolo.y - cluster['y_corrected'])
+            yCorr = cluster.get('y_corrected')
+            if yCorr is None:
+                continue
+
+            distY = abs(latestYolo.y - yCorr)
             allDistances.append((distY, carId, clusterIdx))
 
     allDistances.sort(key=lambda x: x[0])
 
     usedCars = set()
     usedClusters = set()
+    lastDist = 0.0
 
     for dist, carId, clusterIdx in allDistances:
         if carId in usedCars or clusterIdx in usedClusters:
             continue
 
-        car = carsDict[carId]
         cluster = clusterCenters[clusterIdx]
         
-        radarX = float(cluster['x_corrected'])
-        radarY = float(cluster['y_corrected'])
-        radarV = float(cluster['radial_velocity'])
+        valX = cluster.get('x_corrected')
+        valY = cluster.get('y_corrected')
+        valV = cluster.get('radial_velocity')
+
+        if valX is None or valY is None or valV is None:
+            continue
+
+        car = carsDict[carId]
+        radarX = float(valX)
+        radarY = float(valY)
+        radarV = float(valV)
 
         car.radarPos.append(position(x=radarX, y=radarY, frame=frameIndex))
         car.radarVel.append(velocity(v=radarV, frame=frameIndex))
 
         usedCars.add(carId)
         usedClusters.add(clusterIdx)
+        lastDist = dist
 
         print(f"MATCHED ID: {carId:2} | Frame: {frameIndex:5} | Y-Dist: {dist:4.2f}m | X: {radarX:6.2f}m | Y: {radarY:6.2f}m")
 
-        return dist
+    return lastDist
         
 import cv2
 import numpy as np

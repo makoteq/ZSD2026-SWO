@@ -49,6 +49,8 @@ TEXT_LINE_SPACING: Final[int] = 30
 BOX_COLOR: Final[tuple] = (0, 255, 0)
 BOX_THICKNESS: Final[int] = 2
 
+SPEED_LIMIT_KMH: Final[float] = 30.0
+SPEED_LIMIT: Final[float] = SPEED_LIMIT_KMH / 3.6
 # radar
 RADAR_STEP_INTERVAL = 10
 MASK_Z_MIN = 30.0
@@ -121,12 +123,19 @@ if __name__ == "__main__":
                 radar.clusterPoints()
                 # radar.visualizeClusteredStep()
                 clusterCenters = radar.getClusterCenters()
-                
-                #cluster centers to już są samochody 
+
+                for cluster in clusterCenters:
+                    currentVelocity: float = abs(cluster['radial_velocity'])
+                    if currentVelocity > SPEED_LIMIT:
+                        print(f"[WARNING] Speed limit exceeded by cluster: {currentVelocity:.2f} m/s")
+
                 #TODO przkeorczenuie prędkosci 
 
+                posGlobalYDifference = 0.0
                 plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters)
-                dist = matchClustersToCars(carsDict, clusterCenters, frameIndex)
+                matchedDist = matchClustersToCars(carsDict, clusterCenters, frameIndex)
+                if posGlobalYDifference == 0.0 and matchedDist > 0.0:
+                    posGlobalYDifference = matchedDist
                 
            
             results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
@@ -168,7 +177,7 @@ if __name__ == "__main__":
 
                     car = carsDict[trackId]
 
-                    car.posGlobalYDifference = dist
+    
                     car.update(
                         boxXywh,
                         conf,
@@ -180,7 +189,8 @@ if __name__ == "__main__":
                         FOV,
                         frame_time,
                         IMGSZ,
-                        radar
+                        radar,
+                        posGlobalYDifference
                     )
 
                     drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.type, car.pos[-1].x, car.pos[-1].y, car.velo[-1].v)
