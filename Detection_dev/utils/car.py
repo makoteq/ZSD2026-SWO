@@ -8,7 +8,6 @@ IMAGE_WIDTH: Final[int] = 128
 IMAGE_HEIGHT: Final[int] = 128
 IMG_SIZE: Final[Tuple[int, int]] = (IMAGE_WIDTH, IMAGE_HEIGHT)
 NORM_FACTOR: Final[float] = 255.0
-SMOOTHING_WINDOW_SIZE: Final[int] = 8
 posGlobalYDifference = 28.0
 
 
@@ -74,6 +73,55 @@ class Car:
         self.frame_width = 0.0
         self.imgSize = 0.0
         self.radar = None
+
+        self.wasInsideLane: Union[bool, None] = None
+        self.isOutsideLane = False
+        self.laneDepartureFrame = -1
+        self.laneDepartureCount = 0
+
+    def _laneBoundsAtY(self, detectedLines: List[Any], yValue: float) -> Union[Tuple[float, float], None]:
+        if len(detectedLines) < 2:
+            return None
+
+        leftLine = detectedLines[0]
+        rightLine = detectedLines[1]
+
+        leftM = leftLine.get('m')
+        leftB = leftLine.get('b')
+        rightM = rightLine.get('m')
+        rightB = rightLine.get('b')
+
+        if None in (leftM, leftB, rightM, rightB):
+            return None
+
+        xLeft = (leftM * yValue) + leftB
+        xRight = (rightM * yValue) + rightB
+
+        laneLeft = float(min(xLeft, xRight))
+        laneRight = float(max(xLeft, xRight))
+
+        if abs(laneRight - laneLeft) < 1e-6:
+            return None
+
+        return laneLeft, laneRight
+
+    def updateLaneState(self, detectedLines: List[Any], frameIndex: int) -> bool:
+        laneBounds = self._laneBoundsAtY(detectedLines, self.y)
+        if laneBounds is None:
+            return False
+
+        centerX = float(self.x)
+        isInsideLane = laneBounds[0] <= centerX <= laneBounds[1]
+        laneDepartureDetected = (self.wasInsideLane is True) and (not isInsideLane)
+
+        if laneDepartureDetected:
+            self.laneDepartureFrame = frameIndex
+            self.laneDepartureCount += 1
+
+        self.wasInsideLane = isInsideLane
+        self.isOutsideLane = not isInsideLane
+
+        return laneDepartureDetected
 
     def calcDistance(self, detectedLines: List[Any], roadWidthH0Px: float, roadWidthMeters: float) -> float:
         yBottom = self.y + (self.h / 2.0)
