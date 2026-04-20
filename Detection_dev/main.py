@@ -104,6 +104,10 @@ if __name__ == "__main__":
                 radar.clusterPoints()
                 # radar.visualizeClusteredStep()
                 clusterCenters = radar.getClusterCenters()
+                
+                #cluster centers to już są samochody 
+                #TODO przkeorczenuie prędkosci 
+
                 plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters)
                 matchClustersToCars(carsDict, clusterCenters, frameIndex)
                 
