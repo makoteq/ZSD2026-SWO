@@ -9,8 +9,10 @@ IMAGE_HEIGHT: Final[int] = 128
 IMG_SIZE: Final[Tuple[int, int]] = (IMAGE_WIDTH, IMAGE_HEIGHT)
 NORM_FACTOR: Final[float] = 255.0
 SMOOTHING_WINDOW_SIZE: Final[int] = 8
-CAR_RADAR_OFFSET = 28.0
+posGlobalYDifference = 28.0
 
+
+##TODO zmeinić na 3 kategorie najprawbopodobniej
 CATEGORY_MAP: Final[Dict[int, str]] = {
     0: "coupe",
     1: "hatchback",
@@ -42,8 +44,10 @@ class Car:
         self.radarPos: List[position] = []
         self.radarVel: List[velocity] = []
         self.pos: List[position] = []
+
         self.velo: List[velocity] = []
         
+        self.posGlobalYDifference = 0.0
         self.posDifference: position = position(x=0.0, y=0.0, frame=-1)
         self.veloDifference: velocity = velocity(v=0.0, frame=-1)
 
@@ -60,7 +64,8 @@ class Car:
         self.lastSeen = -1
         self.updateCount = 0
         self.type = "unknown"
-        self.k = 0.0 
+        self.mass = 0.0 ##TODO dodać methode która zminia mase ze względy na
+        self.deaccelaretion = 0.0 ##TODO dodać methode która daje deacceleracje samochodu 
         self.breakingDistance = 0.0
         self.fov = 0.0
  
@@ -135,7 +140,7 @@ class Car:
             latestRadarVel = self.radarVel[-1]
 
             diffX = latestRadarPos.x - rawX
-            diffY = latestRadarPos.y - (rawY + CAR_RADAR_OFFSET)
+            diffY = latestRadarPos.y - (rawY + posGlobalYDifference)
             self.posDifference = position(x=diffX, y=diffY, frame=frameIndex)
 
             currentV = latestRadarVel.v
@@ -143,12 +148,14 @@ class Car:
 
         finalPos = position(
             x=rawX + self.posDifference.x,
-            y=rawY + CAR_RADAR_OFFSET + self.posDifference.y,
+            y=rawY + posGlobalYDifference + self.posDifference.y,
             frame=frameIndex
         )
         
         self.pos.append(finalPos)
         self.velo.append(velocity(v=currentV, frame=frameIndex))
+
+        # self.breakingDistance()
 
         self.updateCount += 1
         
@@ -167,4 +174,6 @@ class Car:
         self.breakingDistance = self.calcBreakingDistance()
 
     def calcBreakingDistance(self) -> float:
+        ##TODO dodać breaking disancew bazując na self.pos i self.velo
+        self.breakingDistance = 0.0
         return 0.0

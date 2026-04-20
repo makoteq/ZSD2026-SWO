@@ -9,17 +9,19 @@ from pathlib import Path
 from tqdm import tqdm
 from typing import Final, List
 
-# Importy lokalne (zakładam, że istnieją w Twoim projekcie)
-from algorithms.lane_detection.lane_detector import LaneDetector
+# Importy lokalne
+from algorithms.lane_detection_brute.lane_detection_brute import runLaneDetection
+from utils.points import build_lines_equations
 from utils.car import Car
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
-from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars
+from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines
 import matplotlib.pyplot as plt
 
 
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 VIDEO_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/rgb.mp4")
+# VIDEO_PATH = os.path.join(DATA_DIR, "normal_traffic/rgb.mp4")
 CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 CNN_MODEL_PATH = os.path.join(DATA_DIR, "models", "cnn.h5")
@@ -51,7 +53,7 @@ BOX_THICKNESS: Final[int] = 2
 RADAR_STEP_INTERVAL = 10
 MASK_Z_MIN = 30.0
 MASK_Z_MAX = 50.0
-MASK_Y_MIN =75.0
+MASK_Y_MIN = 75
 MASK_Y_MAX = 130.0
 
 # window
@@ -86,12 +88,27 @@ if __name__ == "__main__":
 
     try:
         while cap.isOpened():
-     
+            
             success, frame = cap.read()
             if not success: break
 
+            staleIds = [carId for carId, carObj in carsDict.items() if carObj.lastSeen < frameIndex - 5]
+            for carId in staleIds: del carsDict[carId]
+            
             if frameIndex == 0:
-                ##TODO: replace with auto lane detection
+                # # Check if lines.json exists in cache
+                # project_root = Path(__file__).resolve().parents[1]
+                # cached_lanes_path = project_root / "data" / "output" / "lines.json"
+                # print(f"cached_lanes_path = {cached_lanes_path}")
+                # if cached_lanes_path.exists():
+                #     lines_path = cached_lanes_path
+                # elif cached_lanes_path.exists():
+                #     lines_path = cached_lanes_path
+                # else:
+                #     lines_path = runLaneDetection(showVideo=False,PASSES_COUNT=12)
+
+                # detected_lines = build_lines_equations(lines_path)
+                # lines = getManualLaneLines(VIDEO_PATH)
                 detected_lines = [{'m': -0.608171, 'b': 763.608171, 'x_bot': 106.783658, 'abs_m': 0.608171}, {'m': 0.605019, 'b': 1157.789963, 'x_bot': 1811.210037, 'abs_m': 0.605019}]
                 y=0
                 xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
@@ -104,12 +121,40 @@ if __name__ == "__main__":
                 radar.clusterPoints()
                 # radar.visualizeClusteredStep()
                 clusterCenters = radar.getClusterCenters()
+                
+                #cluster centers to już są samochody 
+                #TODO przkeorczenuie prędkosci 
+
                 plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters)
-                matchClustersToCars(carsDict, clusterCenters, frameIndex)
+                dist = matchClustersToCars(carsDict, clusterCenters, frameIndex)
                 
            
             results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
             annotatedFrame = frame.copy()
+
+            # TODO handle it via arg or smth
+            # Draw lines for testing
+            
+            # LANE_LINE_COLOR = (0, 200, 255)
+            # LANE_LINE_THICKNESS = 2
+            # y_top = 0
+            # y_bottom = frameHeight - 1
+            # for line in detected_lines:
+            #     m = line.get('m')
+            #     b = line.get('b')
+            #     if m is None or b is None:
+            #         continue
+
+            #     x_top = int((m * y_top) + b)
+            #     x_bottom = int((m * y_bottom) + b)
+            #     cv2.line(
+            #         annotatedFrame,
+            #         (x_top, y_top),
+            #         (x_bottom, y_bottom),
+            #         LANE_LINE_COLOR,
+            #         LANE_LINE_THICKNESS,
+            #     )
+
 
             if results[0].boxes.id is not None:
                 boxesXyxy = results[0].boxes.xyxy.cpu().numpy()
@@ -123,6 +168,7 @@ if __name__ == "__main__":
 
                     car = carsDict[trackId]
 
+                    car.posGlobalYDifference = dist
                     car.update(
                         boxXywh,
                         conf,
@@ -142,9 +188,8 @@ if __name__ == "__main__":
                     points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
                     cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
 
-            staleIds = [carId for carId, carObj in carsDict.items() if carObj.lastSeen < frameIndex - 5]
-            for carId in staleIds: del carsDict[carId]
-            
+
+                ##TODO dodać algorytm wykrywania niebezpieczeństwa
 
             currentTime = START_TIME + (frameIndex * frame_time)
             cv2.putText(annotatedFrame, f"Frame: {frameIndex}", (TEXT_POSITION_X, TEXT_POSITION_Y_START), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
@@ -153,6 +198,7 @@ if __name__ == "__main__":
             out.write(annotatedFrame)
             cv2.imshow(WINDOW_NAME, annotatedFrame)
             if cv2.waitKey(WAIT_KEY_MS) & 0xFF == EXIT_KEY: break
+
 
             frameIndex += 1
 

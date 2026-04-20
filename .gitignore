@@ -20,7 +20,7 @@ Detection_dev/v7
 *.pyc
 *.cpython-312
 *.cpython-312.pyc
-
+* - Copy.py
 
 # custom models for roi
 !Detection_dev/algorithms/lane_detection/*.pt
