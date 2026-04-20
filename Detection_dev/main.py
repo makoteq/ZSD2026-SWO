@@ -88,9 +88,13 @@ if __name__ == "__main__":
 
     try:
         while cap.isOpened():
-     
+            
             success, frame = cap.read()
             if not success: break
+
+            staleIds = [carId for carId, carObj in carsDict.items() if carObj.lastSeen < frameIndex - 5]
+            for carId in staleIds: del carsDict[carId]
+            
 
             if frameIndex == 0:
                 # # Check if lines.json exists in cache
@@ -183,9 +187,8 @@ if __name__ == "__main__":
                     points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
                     cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
 
-            staleIds = [carId for carId, carObj in carsDict.items() if carObj.lastSeen < frameIndex - 5]
-            for carId in staleIds: del carsDict[carId]
-            
+
+                ##TODO dodać algorytm wykrywania niebezpieczeństwa
 
             currentTime = START_TIME + (frameIndex * frame_time)
             cv2.putText(annotatedFrame, f"Frame: {frameIndex}", (TEXT_POSITION_X, TEXT_POSITION_Y_START), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
@@ -194,6 +197,7 @@ if __name__ == "__main__":
             out.write(annotatedFrame)
             cv2.imshow(WINDOW_NAME, annotatedFrame)
             if cv2.waitKey(WAIT_KEY_MS) & 0xFF == EXIT_KEY: break
+
 
             frameIndex += 1
 

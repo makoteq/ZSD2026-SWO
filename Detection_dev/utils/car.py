@@ -11,6 +11,8 @@ NORM_FACTOR: Final[float] = 255.0
 SMOOTHING_WINDOW_SIZE: Final[int] = 8
 CAR_RADAR_OFFSET = 28.0
 
+
+##TODO zmeinić na 3 kategorie najprawbopodobniej
 CATEGORY_MAP: Final[Dict[int, str]] = {
     0: "coupe",
     1: "hatchback",
@@ -61,7 +63,8 @@ class Car:
         self.lastSeen = -1
         self.updateCount = 0
         self.type = "unknown"
-        self.k = 0.0 
+        self.mass = 0.0 ##TODO dodać methode która zminia mase ze względy na
+        self.deaccelaretion ##TODO dodać methode która daje deacceleracje samochodu 
         self.breakingDistance = 0.0
         self.fov = 0.0
  
@@ -151,6 +154,8 @@ class Car:
         self.pos.append(finalPos)
         self.velo.append(velocity(v=currentV, frame=frameIndex))
 
+        self.breakingDistance()
+
         self.updateCount += 1
         
         if confidence > self.maxConfidence:
@@ -168,4 +173,6 @@ class Car:
         self.breakingDistance = self.calcBreakingDistance()
 
     def calcBreakingDistance(self) -> float:
+        ##TODO dodać breaking disancew bazując na self.pos i self.velo
+        self.breakingDistance = 0.0
         return 0.0
