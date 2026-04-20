@@ -42,6 +42,7 @@ class Car:
         self.radarPos: List[position] = []
         self.radarVel: List[velocity] = []
         self.pos: List[position] = []
+
         self.velo: List[velocity] = []
         
         self.posDifference: position = position(x=0.0, y=0.0, frame=-1)

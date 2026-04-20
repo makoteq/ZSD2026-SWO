@@ -48,11 +48,8 @@ def matchClustersToCars(carsDict: Dict[int, Any], clusterCenters: List[Dict[str,
         
         latestYolo = car.pos[-1]
         for clusterIdx, cluster in enumerate(clusterCenters):
-            dist = math.dist(
-                [latestYolo.x, latestYolo.y], 
-                [cluster['x_corrected'], cluster['y_corrected']]
-            )
-            allDistances.append((dist, carId, clusterIdx))
+            distY = abs(latestYolo.y - cluster['y_corrected'])
+            allDistances.append((distY, carId, clusterIdx))
 
     allDistances.sort(key=lambda x: x[0])
 
@@ -76,6 +73,7 @@ def matchClustersToCars(carsDict: Dict[int, Any], clusterCenters: List[Dict[str,
         usedCars.add(carId)
         usedClusters.add(clusterIdx)
 
+        print(f"MATCHED ID: {carId:2} | Frame: {frameIndex:5} | Y-Dist: {dist:4.2f}m | X: {radarX:6.2f}m | Y: {radarY:6.2f}m")
         
 def plotRadarComparison(minX: float, maxX: float, minY: float, maxY: float, carsDict: Dict[int, Any], clusterCenters: List[Dict[str, Any]]) -> None:
     if not plt.fignum_exists(1):
