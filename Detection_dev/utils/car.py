@@ -9,7 +9,7 @@ IMAGE_HEIGHT: Final[int] = 128
 IMG_SIZE: Final[Tuple[int, int]] = (IMAGE_WIDTH, IMAGE_HEIGHT)
 NORM_FACTOR: Final[float] = 255.0
 SMOOTHING_WINDOW_SIZE: Final[int] = 8
-CAR_RADAR_OFFSET = 28.0
+posGlobalYDifference = 28.0
 
 
 ##TODO zmeinić na 3 kategorie najprawbopodobniej
@@ -47,6 +47,7 @@ class Car:
 
         self.velo: List[velocity] = []
         
+        self.posGlobalYDifference = 0.0
         self.posDifference: position = position(x=0.0, y=0.0, frame=-1)
         self.veloDifference: velocity = velocity(v=0.0, frame=-1)
 
@@ -139,7 +140,7 @@ class Car:
             latestRadarVel = self.radarVel[-1]
 
             diffX = latestRadarPos.x - rawX
-            diffY = latestRadarPos.y - (rawY + CAR_RADAR_OFFSET)
+            diffY = latestRadarPos.y - (rawY + posGlobalYDifference)
             self.posDifference = position(x=diffX, y=diffY, frame=frameIndex)
 
             currentV = latestRadarVel.v
@@ -147,7 +148,7 @@ class Car:
 
         finalPos = position(
             x=rawX + self.posDifference.x,
-            y=rawY + CAR_RADAR_OFFSET + self.posDifference.y,
+            y=rawY + posGlobalYDifference + self.posDifference.y,
             frame=frameIndex
         )
         

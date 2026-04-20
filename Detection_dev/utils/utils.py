@@ -39,7 +39,7 @@ def drawCustomBox(
     cv2.putText(annotatedFrame, line1, (x1 + 5, y1 - (lineHeight * 2) - 5), font, FONT_SCALE, (0, 0, 0), FONT_THICKNESS)
     cv2.putText(annotatedFrame, line2, (x1 + 5, y1 - lineHeight - 5), font, FONT_SCALE, (0, 0, 0), FONT_THICKNESS)
 
-def matchClustersToCars(carsDict: Dict[int, Any], clusterCenters: List[Dict[str, Any]], frameIndex: int) -> None:
+def matchClustersToCars(carsDict: Dict[int, Any], clusterCenters: List[Dict[str, Any]], frameIndex: int) -> float:
     allDistances = []
 
     for carId, car in carsDict.items():
@@ -74,6 +74,8 @@ def matchClustersToCars(carsDict: Dict[int, Any], clusterCenters: List[Dict[str,
         usedClusters.add(clusterIdx)
 
         print(f"MATCHED ID: {carId:2} | Frame: {frameIndex:5} | Y-Dist: {dist:4.2f}m | X: {radarX:6.2f}m | Y: {radarY:6.2f}m")
+
+        return dist
         
 import cv2
 import numpy as np

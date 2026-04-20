@@ -95,7 +95,6 @@ if __name__ == "__main__":
             staleIds = [carId for carId, carObj in carsDict.items() if carObj.lastSeen < frameIndex - 5]
             for carId in staleIds: del carsDict[carId]
             
-
             if frameIndex == 0:
                 # # Check if lines.json exists in cache
                 # project_root = Path(__file__).resolve().parents[1]
@@ -109,7 +108,7 @@ if __name__ == "__main__":
                 #     lines_path = runLaneDetection(showVideo=False,PASSES_COUNT=12)
 
                 # detected_lines = build_lines_equations(lines_path)
-                lines = getManualLaneLines(VIDEO_PATH)
+                # lines = getManualLaneLines(VIDEO_PATH)
                 detected_lines = [{'m': -0.608171, 'b': 763.608171, 'x_bot': 106.783658, 'abs_m': 0.608171}, {'m': 0.605019, 'b': 1157.789963, 'x_bot': 1811.210037, 'abs_m': 0.605019}]
                 y=0
                 xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
@@ -127,7 +126,7 @@ if __name__ == "__main__":
                 #TODO przkeorczenuie prędkosci 
 
                 plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters)
-                matchClustersToCars(carsDict, clusterCenters, frameIndex)
+                dist = matchClustersToCars(carsDict, clusterCenters, frameIndex)
                 
            
             results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
@@ -169,6 +168,7 @@ if __name__ == "__main__":
 
                     car = carsDict[trackId]
 
+                    car.posGlobalYDifference = dist
                     car.update(
                         boxXywh,
                         conf,
