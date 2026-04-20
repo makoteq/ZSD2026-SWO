@@ -5,6 +5,7 @@ import numpy as np
 import csv
 import time
 import random
+import json
 import traceback
 from datetime import datetime
 
@@ -14,14 +15,23 @@ import s_overtake
 import s_normal_trafic
 
 run_start_sim_time = 0.0
-#sensor loc
-#todo remove const and add random
+# sensor loc
+# todo remove const and add random
 SENSOR_X = 181.0
 SENSOR_Y = 107.0
 SENSOR_Z = 6.0
 SENSOR_YAW = 180.0
-SENSOR_PITCH = -5.0
-#debug lines                #todo find a better way to disp them
+# SENSOR_PITCH = -5.0
+# can and radaar params
+# ---------------------------------------
+CAMERA_Y = 107.0
+CAMERA_PITCH = -12.0
+CAMERA_FOV = 20.0
+
+RADAR_Y = 107.0
+RADAR_PITCH = -8.0
+# ---------------------------------------
+# debug lines                #todo find a better way to disp them
 DRAW_DEBUG_LINES = True
 SIDE_LEFT_Y = 111.0
 SIDE_RIGHT_Y = 104.0
@@ -31,51 +41,51 @@ SIDE_LINE_Z = 0.3
 SIDE_LINE_COLOR = carla.Color(255, 255, 255)
 SIDE_LINE_THICKNESS = 0.05
 
-#scenarios------------------------------------------------------------------------------
-SCENARIOS_TO_RUN=[
-    #standard scenarios:
-    #("normal_traffic", s_normal_trafic, "Normal Traffic"),
-    #("single_speeding", s_single_speeding, "Single Speeding"),
-    #("speeding", scenario_speeding, "Speeding"),
-    #("lane_change", scenario_lane_change, "Lane Change"),
+# scenarios------------------------------------------------------------------------------
+SCENARIOS_TO_RUN = [
+    # standard scenarios:
+    # ("normal_traffic", s_normal_trafic, "Normal Traffic"),
+    # ("single_speeding", s_single_speeding, "Single Speeding"),
+    # ("speeding", scenario_speeding, "Speeding"),
+    # ("lane_change", scenario_lane_change, "Lane Change"),
     ("overtaking", s_overtake, "Overtaking"),
-    #anomalys:
-    #("pull_over", s_pull_over, "Pull Over To Shoulder"),
+    # anomalys:
+    # ("pull_over", s_pull_over, "Pull Over To Shoulder"),
 ]
 SAMPLES_PER_SCENARIO = 5
-RECORD_DURATION_SEC = 30.0      #for normal traffic only
-#weather -----------------------------------------------------------------------------
+RECORD_DURATION_SEC = 30.0  # for normal traffic only
+# weather -----------------------------------------------------------------------------
 WEATHER_PRESETS = {
-    '1':  ('ClearNoon',            carla.WeatherParameters.ClearNoon),
-    '2':  ('ClearSunset',          carla.WeatherParameters.ClearSunset),
-    '3':  ('CloudyNoon',           carla.WeatherParameters.CloudyNoon),
-    '4':  ('CloudySunset',         carla.WeatherParameters.CloudySunset),
-    '5':  ('WetNoon',              carla.WeatherParameters.WetNoon),
-    '6':  ('WetSunset',            carla.WeatherParameters.WetSunset),
-    '7':  ('MidRainyNoon',         carla.WeatherParameters.MidRainyNoon),
-    '8':  ('MidRainSunset',        carla.WeatherParameters.MidRainSunset),
-    '9':  ('HardRainNoon',         carla.WeatherParameters.HardRainNoon),
-    '10': ('HardRainSunset',       carla.WeatherParameters.HardRainSunset),
-    '11': ('SoftRainNoon',         carla.WeatherParameters.SoftRainNoon),
-    '12': ('SoftRainSunset',       carla.WeatherParameters.SoftRainSunset),
-    '13': ('ClearNight',           carla.WeatherParameters.ClearNight),
-    '14': ('CloudyNight',          carla.WeatherParameters.CloudyNight),
-    '15': ('WetNight',             carla.WeatherParameters.WetNight),
-    '16': ('SoftRainNight',        carla.WeatherParameters.SoftRainNight),
-    '17': ('MidRainyNight',        carla.WeatherParameters.MidRainyNight),
-    '18': ('HardRainNight',        carla.WeatherParameters.HardRainNight),
+    '1': ('ClearNoon', carla.WeatherParameters.ClearNoon),
+    '2': ('ClearSunset', carla.WeatherParameters.ClearSunset),
+    '3': ('CloudyNoon', carla.WeatherParameters.CloudyNoon),
+    '4': ('CloudySunset', carla.WeatherParameters.CloudySunset),
+    '5': ('WetNoon', carla.WeatherParameters.WetNoon),
+    '6': ('WetSunset', carla.WeatherParameters.WetSunset),
+    '7': ('MidRainyNoon', carla.WeatherParameters.MidRainyNoon),
+    '8': ('MidRainSunset', carla.WeatherParameters.MidRainSunset),
+    '9': ('HardRainNoon', carla.WeatherParameters.HardRainNoon),
+    '10': ('HardRainSunset', carla.WeatherParameters.HardRainSunset),
+    '11': ('SoftRainNoon', carla.WeatherParameters.SoftRainNoon),
+    '12': ('SoftRainSunset', carla.WeatherParameters.SoftRainSunset),
+    '13': ('ClearNight', carla.WeatherParameters.ClearNight),
+    '14': ('CloudyNight', carla.WeatherParameters.CloudyNight),
+    '15': ('WetNight', carla.WeatherParameters.WetNight),
+    '16': ('SoftRainNight', carla.WeatherParameters.SoftRainNight),
+    '17': ('MidRainyNight', carla.WeatherParameters.MidRainyNight),
+    '18': ('HardRainNight', carla.WeatherParameters.HardRainNight),
 }
 WEATHER_TAGS = {
     "day": "1",
     "night": "13",
-    "rain": "9",        #todo fix and shorten the weather situation
+    "rain": "9",  # todo fix and shorten the weather situation
     "fog": "3",
 }
 
 current_weather_name = 'ClearNoon'
-WEATHER_PLAN = ["day"]*SAMPLES_PER_SCENARIO
+WEATHER_PLAN = ["day"] * SAMPLES_PER_SCENARIO
 
-#radar ---------------------------------------------------------------------------------
+# radar ---------------------------------------------------------------------------------
 RADAR_PROFILE_NAME = "TRUGRD_LR_like"
 RADAR_PRESETS = {
     "TRUGRD_LR_like": {
@@ -86,10 +96,10 @@ RADAR_PRESETS = {
         "sensor_tick": "0.05",
     }
 }
-#camera ---------------------------------------------------------------------------------
+# camera ---------------------------------------------------------------------------------
 CAMERA_TICK = 0.05
 VIDEO_FPS = 1.0 / CAMERA_TICK
-#global states --------------------------------------------------------------------------
+# global states --------------------------------------------------------------------------
 radar_actor = None
 video_writer = None
 radar_csv_file = None
@@ -98,9 +108,11 @@ output_dir = None
 video_path = None
 radar_log_path = None
 session_log_path = None
-#-----------------------------------------------------------------------------------------
 
-#destroys cars safely, if code tried to destroy a none existent actor carla would break
+
+# -----------------------------------------------------------------------------------------
+
+# destroys cars safely, if code tried to destroy a none existent actor carla would break
 def safe_destroy_actor(actor):
     if actor is None:
         return
@@ -118,10 +130,11 @@ def safe_destroy_actor(actor):
         actor.destroy()
     except RuntimeError as err:
         msg = str(err).lower()
-        if("not found" in msg) or ("already destroyed" in msg):
+        if ("not found" in msg) or ("already destroyed" in msg):
             return
     except Exception:
         pass
+
 
 def safe_destroy_vehicles_batch(world, client):
     try:
@@ -143,13 +156,14 @@ def safe_destroy_vehicles_batch(world, client):
         print(f"[WARN] safe_destroy_vehicles_batch failed: {e}")
 
 
-#recording and misc ---------------------------------------------------------------------
+# recording and misc ---------------------------------------------------------------------
 
 def weather_for_run(global_run_idx: int):
-    tag = WEATHER_PLAN[(global_run_idx - 1) %len(WEATHER_PLAN)]
+    tag = WEATHER_PLAN[(global_run_idx - 1) % len(WEATHER_PLAN)]
     preset_key = WEATHER_TAGS.get(tag, "1")
     name, preset = WEATHER_PRESETS[preset_key]
     return tag, name, preset
+
 
 def start_recording(run_dir: str):
     global video_writer, radar_csv_file, radar_csv_writer
@@ -174,6 +188,7 @@ def start_recording(run_dir: str):
 
     video_writer = None
 
+
 def stop_recording():
     global video_writer, radar_csv_file, radar_csv_writer
     global output_dir, video_path, radar_log_path
@@ -197,7 +212,8 @@ def stop_recording():
     video_path = None
     radar_log_path = None
 
-#callbacks for radar and camera ----------------------------------------------------------------
+
+# callbacks for radar and camera ----------------------------------------------------------------
 
 def radar_callback(sensor_data):
     global radar_actor, radar_csv_writer, run_start_sim_time
@@ -208,9 +224,9 @@ def radar_callback(sensor_data):
     ts_run = ts_abs - run_start_sim_time if run_start_sim_time is not None else 0.0
 
     points = np.frombuffer(sensor_data.raw_data, dtype=np.float32).reshape((len(sensor_data), 4))
-    vel   = points[:, 0]
-    az    = points[:, 1]
-    alt   = points[:, 2]
+    vel = points[:, 0]
+    az = points[:, 1]
+    alt = points[:, 2]
     depth = points[:, 3]
 
     x = depth * np.cos(alt) * np.sin(az)
@@ -235,6 +251,7 @@ def radar_callback(sensor_data):
     except ValueError:
         return
 
+
 def camera_callback(image):
     global video_writer, video_path
 
@@ -247,7 +264,7 @@ def camera_callback(image):
 
     if video_writer is None:
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        path   = video_path
+        path = video_path
         if not path:
             return
         video_writer = cv2.VideoWriter(path, fourcc, VIDEO_FPS, (image.width, image.height))
@@ -257,6 +274,7 @@ def camera_callback(image):
 
     video_writer.write(bgr)
 
+
 def safe_callback_wrapper(fn):
     def _wrapped(data):
         try:
@@ -264,9 +282,11 @@ def safe_callback_wrapper(fn):
         except Exception as e:
             print(f"[WARN] callback exception: {e}")
             traceback.print_exc()
+
     return _wrapped
 
-#enviroment and blueprint presets ----------------------------------------------------------------
+
+# enviroment and blueprint presets ----------------------------------------------------------------
 def draw_debug_side_lines(world):
     if not DRAW_DEBUG_LINES:
         return
@@ -276,8 +296,11 @@ def draw_debug_side_lines(world):
     right_a = carla.Location(x=SIDE_LINE_X_START, y=SIDE_RIGHT_Y, z=SIDE_LINE_Z)
     right_b = carla.Location(x=SIDE_LINE_X_END, y=SIDE_RIGHT_Y, z=SIDE_LINE_Z)
 
-    world.debug.draw_line(left_a, left_b, thickness=SIDE_LINE_THICKNESS, color=SIDE_LINE_COLOR, life_time=0.0, persistent_lines=True)
-    world.debug.draw_line(right_a, right_b, thickness=SIDE_LINE_THICKNESS, color=SIDE_LINE_COLOR, life_time=0.0, persistent_lines=True)
+    world.debug.draw_line(left_a, left_b, thickness=SIDE_LINE_THICKNESS, color=SIDE_LINE_COLOR, life_time=0.0,
+                          persistent_lines=True)
+    world.debug.draw_line(right_a, right_b, thickness=SIDE_LINE_THICKNESS, color=SIDE_LINE_COLOR, life_time=0.0,
+                          persistent_lines=True)
+
 
 def apply_radar_preset(radar_bp, preset_name: str):
     preset = RADAR_PRESETS[preset_name]
@@ -304,7 +327,7 @@ def setup_environment(client):
     spectator = world.get_spectator()
     spectator.set_transform(carla.Transform(
         carla.Location(x=SENSOR_X, y=SENSOR_Y, z=SENSOR_Z),
-        carla.Rotation(pitch=SENSOR_PITCH, yaw=SENSOR_YAW)
+        carla.Rotation(pitch=CAMERA_PITCH, yaw=SENSOR_YAW)
     ))
 
     draw_debug_side_lines(world)
@@ -312,7 +335,7 @@ def setup_environment(client):
     blueprint_library = world.get_blueprint_library()
 
     camera_bp = blueprint_library.find("sensor.camera.rgb")
-    camera_bp.set_attribute("fov", "20.0")
+    camera_bp.set_attribute("fov", str(CAMERA_FOV))
     camera_bp.set_attribute("image_size_y", "1080")
     camera_bp.set_attribute("image_size_x", "1920")
     camera_bp.set_attribute("sensor_tick", str(CAMERA_TICK))
@@ -327,24 +350,53 @@ def setup_environment(client):
     return world, blueprint_library, camera_bp, radar_bp
 
 
-def spawn_sensors_fixed(world, camera_bp, radar_bp):    #todo remove const and add random
+def spawn_sensors_fixed(world, camera_bp, radar_bp):  # todo remove const and add random
     global radar_actor
 
-    t = carla.Transform(
-        carla.Location(x=SENSOR_X, y=SENSOR_Y, z=SENSOR_Z),
-        carla.Rotation(pitch=SENSOR_PITCH, yaw=SENSOR_YAW)
+    cam = carla.Transform(
+        carla.Location(x=SENSOR_X, y=CAMERA_Y, z=SENSOR_Z),
+        carla.Rotation(pitch=CAMERA_PITCH, yaw=SENSOR_YAW)
+    )
+    rad = carla.Transform(
+        carla.Location(x=SENSOR_X, y=RADAR_Y, z=SENSOR_Z),
+        carla.Rotation(pitch=RADAR_PITCH, yaw=SENSOR_YAW)
     )
 
-    camera = world.spawn_actor(camera_bp, t)
-    radar = world.spawn_actor(radar_bp, t)
+    camera = world.spawn_actor(camera_bp, cam)
+    radar = world.spawn_actor(radar_bp, rad)
 
     radar_actor = radar
     radar.listen(safe_callback_wrapper(radar_callback))
     camera.listen(safe_callback_wrapper(camera_callback))
 
-    return camera, radar
+    return camera, radar, cam, rad
 
-#logs -----------------------------------------------------------------------------------
+
+# logs -----------------------------------------------------------------------------------
+
+# for saving sensor config to find best param
+def save_sensor_config(run_dir, camera_bp, radar_bp, camera_transform, radar_transform):
+    manifest_path = os.path.join(run_dir, "sensor_config.json")
+
+    data = {
+        "radar": {
+            "horizontal_fov": radar_bp.get_attribute("horizontal_fov").as_float(),
+            "vertical_fov": radar_bp.get_attribute("vertical_fov").as_float(),
+            "pitch_deg": float(radar_transform.rotation.pitch),
+        },
+        "camera": {
+            "fov": camera_bp.get_attribute("fov").as_float(),
+            "image_size_x": camera_bp.get_attribute("image_size_x").as_int(),
+            "image_size_y": camera_bp.get_attribute("image_size_y").as_int(),
+            "pitch_deg": float(camera_transform.rotation.pitch),
+        }
+    }
+
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+    print(f"[CFG] saved: {manifest_path}")
+
 
 def init_batch_output():
     global session_log_path
@@ -376,11 +428,13 @@ def init_batch_output():
         ])
     return root_dir
 
+
 def append_run_log(row):
     with open(session_log_path, "a", newline="", encoding="utf-8") as f:
         csv.writer(f).writerow(row)
 
-#main =====================================================================================
+
+# main =====================================================================================
 
 def main():
     client = carla.Client("localhost", 2000)
@@ -413,6 +467,9 @@ def main():
 
                 print(f"\n[{global_idx}/{total_runs}] {scenario_label} | sample={sample_idx}")
 
+                cam = None
+                rad = None
+
                 try:
                     global run_start_sim_time
                     for _ in range(2):
@@ -421,8 +478,6 @@ def main():
                     run_start_sim_time = float(snap.timestamp.elapsed_seconds)
 
                     safe_destroy_vehicles_batch(world, client)
-                    stop_recording()
-                    start_recording(run_dir)
 
                     camera = None
                     radar = None
@@ -437,7 +492,8 @@ def main():
                     for _ in range(3):
                         world.tick()
 
-                    camera, radar = spawn_sensors_fixed(world, camera_bp, radar_bp)
+                    camera, radar, cam, rad = spawn_sensors_fixed(world, camera_bp, radar_bp)
+                    save_sensor_config(run_dir, camera_bp, radar_bp, cam, rad)
 
                     for _ in range(2):
                         world.tick()
