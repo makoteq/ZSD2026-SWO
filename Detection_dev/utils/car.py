@@ -9,10 +9,7 @@ IMAGE_HEIGHT: Final[int] = 128
 IMG_SIZE: Final[Tuple[int, int]] = (IMAGE_WIDTH, IMAGE_HEIGHT)
 NORM_FACTOR: Final[float] = 255.0
 SMOOTHING_WINDOW_SIZE: Final[int] = 8
-posGlobalYDifference = 28.0
 
-
-##TODO zmeinić na 3 kategorie najprawbopodobniej
 CATEGORY_MAP: Final[Dict[int, str]] = {
     0: "coupe",
     1: "hatchback",
@@ -44,10 +41,9 @@ class Car:
         self.radarPos: List[position] = []
         self.radarVel: List[velocity] = []
         self.pos: List[position] = []
-
         self.velo: List[velocity] = []
         
-        self.posGlobalYDifference = 0.0
+        self.posGlobalYDifference: float = 0.0
         self.posDifference: position = position(x=0.0, y=0.0, frame=-1)
         self.veloDifference: velocity = velocity(v=0.0, frame=-1)
 
@@ -57,18 +53,16 @@ class Car:
         self.velo.append(velocity(v=0.0, frame=-1))
 
         self.history: List[Tuple[float, float]] = []
-
         self.maxConfidence = 0.0
         self.lastConfidence = 0.0
         self.lastCrop = None
         self.lastSeen = -1
         self.updateCount = 0
         self.type = "unknown"
-        self.mass = 0.0 ##TODO dodać methode która zminia mase ze względy na
-        self.deaccelaretion = 0.0 ##TODO dodać methode która daje deacceleracje samochodu 
+        self.mass = 0.0 
+        self.deacceleration = 0.0 
         self.breakingDistance = 0.0
         self.fov = 0.0
- 
         self.frame_height = 0.0
         self.frame_index = 0
         self.frame_width = 0.0
@@ -101,7 +95,7 @@ class Car:
         x = self.radar.minX + (relativePos * laneWidthMeters)
         y = self.calcDistance(detectedLines, roadWidthH0Px, laneWidthMeters)
 
-        return x, y
+        return float(x), float(y)
 
     def checkType(self, frame: np.ndarray, cnnModel: Any) -> Tuple[str, float, np.ndarray, float]:
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -119,7 +113,8 @@ class Car:
         return category, confidence, classProbs, kValue
 
     def update(self, box: Tuple[float, float, float, float], confidence: float, frame: np.ndarray, frameIndex: int, cnnModel: Any, 
-                detectedLines: Any, roadWidthH0Px: float, fov: float, frameTime: float, imgSize: int, radar: Radar) -> None:
+                detectedLines: Any, roadWidthH0Px: float, fov: float, frameTime: float, imgSize: int, radar: Radar, 
+                posGlobalYDifference: float) -> None:
         
         self.x, self.y, self.w, self.h = box
         self.history.append((float(self.x), float(self.y)))
@@ -131,31 +126,30 @@ class Car:
         self.imgSize = imgSize 
         self.fov = fov
         self.radar = radar
+        self.posGlobalYDifference = float(posGlobalYDifference)
 
         rawX, rawY = self.calcPosition(detectedLines, roadWidthH0Px)
-        currentV = self.velo[-1].v
+        currentV = float(self.velo[-1].v)
 
         if self.radarPos[-1].frame == frameIndex:
             latestRadarPos = self.radarPos[-1]
             latestRadarVel = self.radarVel[-1]
 
-            diffX = latestRadarPos.x - rawX
-            diffY = latestRadarPos.y - (rawY + posGlobalYDifference)
+            diffX = float(latestRadarPos.x - rawX)
+            diffY = float(latestRadarPos.y - (rawY + self.posGlobalYDifference))
             self.posDifference = position(x=diffX, y=diffY, frame=frameIndex)
 
-            currentV = latestRadarVel.v
+            currentV = float(latestRadarVel.v)
             self.veloDifference = velocity(v=0.0, frame=frameIndex)
 
         finalPos = position(
-            x=rawX + self.posDifference.x,
-            y=rawY + posGlobalYDifference + self.posDifference.y,
+            x=float(rawX + self.posDifference.x),
+            y=float(rawY + self.posGlobalYDifference + self.posDifference.y),
             frame=frameIndex
         )
         
         self.pos.append(finalPos)
         self.velo.append(velocity(v=currentV, frame=frameIndex))
-
-        # self.breakingDistance()
 
         self.updateCount += 1
         
@@ -169,11 +163,9 @@ class Car:
                 self.lastCrop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
                 category, _, _, k = self.checkType(crop, cnnModel)
                 self.type = category
-                self.k = k
+                self.mass = float(k)
 
         self.breakingDistance = self.calcBreakingDistance()
 
     def calcBreakingDistance(self) -> float:
-        ##TODO dodać breaking disancew bazując na self.pos i self.velo
-        self.breakingDistance = 0.0
         return 0.0
