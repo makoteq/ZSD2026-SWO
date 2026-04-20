@@ -10,6 +10,10 @@ from datetime import datetime
 
 import s_single_speeding
 import s_pull_over
+import s_overtake
+import s_normal_trafic
+
+run_start_sim_time = 0.0
 #sensor loc
 #todo remove const and add random
 SENSOR_X = 181.0
@@ -30,15 +34,15 @@ SIDE_LINE_THICKNESS = 0.05
 #scenarios------------------------------------------------------------------------------
 SCENARIOS_TO_RUN=[
     #standard scenarios:
-    #("normal_traffic", scenario_normal_traffic, "Normal Traffic"),
+    #("normal_traffic", s_normal_trafic, "Normal Traffic"),
     #("single_speeding", s_single_speeding, "Single Speeding"),
     #("speeding", scenario_speeding, "Speeding"),
     #("lane_change", scenario_lane_change, "Lane Change"),
-    #("overtaking", scenario_overtaking, "Overtaking"),
+    ("overtaking", s_overtake, "Overtaking"),
     #anomalys:
-    ("pull_over", s_pull_over, "Pull Over To Shoulder"),
+    #("pull_over", s_pull_over, "Pull Over To Shoulder"),
 ]
-SAMPLES_PER_SCENARIO = 1
+SAMPLES_PER_SCENARIO = 5
 RECORD_DURATION_SEC = 30.0      #for normal traffic only
 #weather -----------------------------------------------------------------------------
 WEATHER_PRESETS = {
@@ -196,13 +200,14 @@ def stop_recording():
 #callbacks for radar and camera ----------------------------------------------------------------
 
 def radar_callback(sensor_data):
-    global radar_actor, radar_csv_writer
+    global radar_actor, radar_csv_writer, run_start_sim_time
     if radar_csv_writer is None or radar_actor is None:
         return
 
-    points = np.frombuffer(
-        sensor_data.raw_data,dtype=np.float32).reshape((len(sensor_data), 4))
+    ts_abs = float(sensor_data.timestamp)
+    ts_run = ts_abs - run_start_sim_time if run_start_sim_time is not None else 0.0
 
+    points = np.frombuffer(sensor_data.raw_data, dtype=np.float32).reshape((len(sensor_data), 4))
     vel   = points[:, 0]
     az    = points[:, 1]
     alt   = points[:, 2]
@@ -216,16 +221,19 @@ def radar_callback(sensor_data):
 
     rows = []
     for i in range(len(points)):
-        loc       = carla.Location(x=float(x[i]), y=float(y[i]), z=float(z[i]))
+        loc = carla.Location(x=float(x[i]), y=float(y[i]), z=float(z[i]))
         world_loc = transform.transform(loc)
         rows.append([
-            float(sensor_data.timestamp), int(sensor_data.frame),
+            ts_run, int(sensor_data.frame),
             float(vel[i]), float(az[i]), float(alt[i]), float(depth[i]),
-            float(x[i]),  float(y[i]),  float(z[i]),
+            float(x[i]), float(y[i]), float(z[i]),
             float(world_loc.x), float(world_loc.y), float(world_loc.z)
         ])
 
-    radar_csv_writer.writerows(rows)
+    try:
+        radar_csv_writer.writerows(rows)
+    except ValueError:
+        return
 
 def camera_callback(image):
     global video_writer, video_path
@@ -298,6 +306,8 @@ def setup_environment(client):
         carla.Location(x=SENSOR_X, y=SENSOR_Y, z=SENSOR_Z),
         carla.Rotation(pitch=SENSOR_PITCH, yaw=SENSOR_YAW)
     ))
+
+    draw_debug_side_lines(world)
 
     blueprint_library = world.get_blueprint_library()
 
@@ -404,7 +414,20 @@ def main():
                 print(f"\n[{global_idx}/{total_runs}] {scenario_label} | sample={sample_idx}")
 
                 try:
+                    global run_start_sim_time
+                    for _ in range(2):
+                        world.tick()
+                    snap = world.get_snapshot()
+                    run_start_sim_time = float(snap.timestamp.elapsed_seconds)
+
                     safe_destroy_vehicles_batch(world, client)
+                    stop_recording()
+                    start_recording(run_dir)
+
+                    camera = None
+                    radar = None
+
+                    run_start_sim_time = None
                     stop_recording()
                     start_recording(run_dir)
 
@@ -415,6 +438,11 @@ def main():
                         world.tick()
 
                     camera, radar = spawn_sensors_fixed(world, camera_bp, radar_bp)
+
+                    for _ in range(2):
+                        world.tick()
+                    snap = world.get_snapshot()
+                    run_start_sim_time = float(snap.timestamp.elapsed_seconds)
 
                     scenario_module.run(
                         world,
@@ -432,6 +460,7 @@ def main():
                     traceback.print_exc()
 
                 finally:
+                    run_start_sim_time = None
                     safe_destroy_actor(camera)
                     safe_destroy_actor(radar)
                     camera = None
