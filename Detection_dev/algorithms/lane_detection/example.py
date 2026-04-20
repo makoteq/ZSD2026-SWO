@@ -10,7 +10,7 @@ def main():
         "test_images/1.png", "test_images/2.png", "test_images/3.png",
         "test_images/4.png", "test_images/5.webp", "test_images/7.webp",
         "test_images/8.jpg", "test_images/9.webp", "test_images/10.jpg",
-        "test_images/11.jpg", "test_images/12.jpg", "test_images/13.jpg",
+        "test_images/11.jpg", "test_images/12.jpg", "test_images/14.png",
     ]
 
     for img_path in image_paths:

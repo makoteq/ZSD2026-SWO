@@ -24,7 +24,7 @@ class LaneDetector:
             'display_width': 500,
             'cluster_m_tol': 0.10,
             'cluster_b_tol_pct': 0.04,
-            'min_line_coverage': 0.10,
+            'min_line_coverage': 0.02,
             'adapt_block_size_base': 81,
             'hough_thresh_base': 20,
             'hough_min_len_base': 30,
@@ -113,17 +113,45 @@ class LaneDetector:
 
     def _get_paint_mask(self, img, road_mask, scaled_params, debug_dict=None):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        blur = cv2.GaussianBlur(gray, (11, 11), 0)
-        adaptive_raw = cv2.adaptiveThreshold(
-            blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
-            scaled_params['adapt_block_size'], self.config['adapt_c']
-        )
+
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+        lower_yellow = np.array([15, 50, 120])
+        upper_yellow = np.array([35, 255, 255])
+        yellow_mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
+
+        road_pixels = gray[road_mask > 0]
+
+        if len(road_pixels) == 0:
+            white_mask = np.zeros_like(gray)
+        else:
+            mean_brightness = np.mean(road_pixels)
+
+            if mean_brightness > 200:
+                p98 = np.percentile(road_pixels, 98)
+                thresh_val = p98 - 6
+                _, paint_mask = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY)
+
+                kernel_width = max(21, int(scaled_params['adapt_block_size'] * 0.4))
+                horizontal_kernel = np.ones((1, kernel_width), np.uint8)
+
+                glare_blobs = cv2.morphologyEx(paint_mask, cv2.MORPH_OPEN, horizontal_kernel)
+                lines_only = cv2.bitwise_xor(paint_mask, glare_blobs)
+
+                white_mask = cv2.morphologyEx(lines_only, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+            else:
+                blur = cv2.GaussianBlur(gray, (11, 11), 0)
+                white_mask = cv2.adaptiveThreshold(
+                    blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
+                    scaled_params['adapt_block_size'], self.config['adapt_c']
+                )
+
+        combined_paint_mask = cv2.bitwise_or(white_mask, yellow_mask)
 
         if debug_dict is not None:
-            debug_dict['adaptive_raw'] = adaptive_raw
+            debug_dict['adaptive_raw'] = combined_paint_mask
 
-        return cv2.bitwise_and(adaptive_raw, road_mask)
-
+        return cv2.bitwise_and(combined_paint_mask, road_mask)
     def _get_verified_mask(self, paint_mask, scaled_params, height, width):
         verified_mask = np.zeros_like(paint_mask)
         lines = cv2.HoughLinesP(
@@ -177,14 +205,22 @@ class LaneDetector:
             if w_rect == 0 or h_rect == 0:
                 continue
 
-            if max(w_rect, h_rect) / min(w_rect, h_rect) < self.config['post_aspect_ratio']:
+            aspect_ratio = max(w_rect, h_rect) / min(w_rect, h_rect)
+
+            if aspect_ratio < self.config['post_aspect_ratio']:
                 continue
 
             hull = cv2.convexHull(cnt)
-            if cv2.contourArea(hull) > 0 and (area / cv2.contourArea(hull)) < self.config['post_min_solidity']:
-                continue
+            hull_area = cv2.contourArea(hull)
 
-            # Jeśli przejdzie filtry kształtu (pole, proporcje, solidność)
+            if hull_area > 0:
+                solidity = area / hull_area
+
+                min_req_solidity = 0.2 if aspect_ratio > 8.0 else self.config['post_min_solidity']
+
+                if solidity < min_req_solidity:
+                    continue
+
             cv2.drawContours(shape_filtered, [cnt], -1, 255, -1)
 
             inside_mask = np.zeros_like(raw_lines)
@@ -193,7 +229,6 @@ class LaneDetector:
             if cv2.countNonZero(inside_mask) > 0:
                 green_ratio = cv2.countNonZero(cv2.bitwise_and(green_mask, inside_mask)) / cv2.countNonZero(inside_mask)
                 if green_ratio <= self.config['max_green_inside']:
-                    # Jeśli przejdzie filtr braku zieleni
                     cv2.drawContours(clean_lanes, [cnt], -1, 255, -1)
 
         if debug_dict is not None:
@@ -210,19 +245,15 @@ class LaneDetector:
             if len(cnt) < 2:
                 continue
 
-            # ROZWIĄZANIE PROBLEMÓW Z KĄTEM:
-            # 1. Tworzymy czystą maskę tylko dla tego jednego bloba i wypełniamy jego środek
+
             blob_mask = np.zeros_like(clean_lanes)
             cv2.drawContours(blob_mask, [cnt], -1, 255, -1)
 
-            # 2. Pobieramy WSZYSTKIE piksele wewnątrz bloba (masę), a nie tylko obrys
             internal_pts = cv2.findNonZero(blob_mask)
 
-            # Pomiń, jeśli blob to jakiś mikro-śmieć
             if internal_pts is None or len(internal_pts) < 10:
                 continue
 
-            # 3. Liczymy fitLine na pełnej masie pikseli - to wymusza prostą idealnie przez środek ciężkości
             [vx, vy, x0, y0] = cv2.fitLine(internal_pts, cv2.DIST_L2, 0, 0.01, 0.01)
 
             if vy == 0:
