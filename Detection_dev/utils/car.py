@@ -76,11 +76,15 @@ class Car:
         self.laneDepartureCount = 0
 
     def _laneBoundsAtY(self, detectedLines: List[Any], yValue: float) -> Union[Tuple[float, float], None]:
-        if len(detectedLines) < 2:
-            return None
+        leftLine = next((line for line in detectedLines if line.get('name') == 'left_line'), None)
+        rightLine = next((line for line in detectedLines if line.get('name') == 'right_line'), None)
 
-        leftLine = detectedLines[0]
-        rightLine = detectedLines[1]
+        if leftLine is None or rightLine is None:
+            # Backward compatibility for older line dictionaries without explicit names.
+            if len(detectedLines) < 2:
+                return None
+            leftLine = detectedLines[0]
+            rightLine = detectedLines[1]
 
         leftM = leftLine.get('m')
         leftB = leftLine.get('b')
@@ -101,14 +105,23 @@ class Car:
 
         return laneLeft, laneRight
 
-    def updateLaneState(self, detectedLines: List[Any], frameIndex: int) -> bool:
-        laneBounds = self._laneBoundsAtY(detectedLines, self.y)
+    def updateLaneState(
+        self,
+        detectedLines: List[Any],
+        frameIndex: int,
+        centerX: Union[float, None] = None,
+        centerY: Union[float, None] = None,
+    ) -> bool:
+        laneCenterX = float(self.x if centerX is None else centerX)
+        laneCenterY = float(self.y if centerY is None else centerY)
+
+        laneBounds = self._laneBoundsAtY(detectedLines, laneCenterY)
         if laneBounds is None:
             return False
 
-        centerX = float(self.x)
-        isInsideLane = laneBounds[0] <= centerX <= laneBounds[1]
-        laneDepartureDetected = (self.wasInsideLane is True) and (not isInsideLane)
+        isInsideLane = laneBounds[0] <= laneCenterX <= laneBounds[1]
+        wasOutsideLane = self.wasInsideLane is False
+        laneDepartureDetected = (not isInsideLane) and (not wasOutsideLane)
 
         if laneDepartureDetected:
             self.laneDepartureFrame = frameIndex

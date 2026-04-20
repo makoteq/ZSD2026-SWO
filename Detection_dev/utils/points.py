@@ -19,7 +19,10 @@ def _x_bottom_from_points(start: list[int], end: list[int]) -> float:
 	return float(start[0] if start[1] >= end[1] else end[0])
 
 
-def build_lines_equations(lines_json: str | Path | dict[str, Any]) -> list[dict[str, float]]:
+def build_lines_equations(
+	lines_json: str | Path | dict[str, Any],
+	side_offset_px: float = 0.0,
+) -> list[dict[str, float]]:
 
 	if isinstance(lines_json, (str, Path)):
 		with open(lines_json, "r", encoding="utf-8") as file:
@@ -39,10 +42,21 @@ def build_lines_equations(lines_json: str | Path | dict[str, Any]) -> list[dict[
 			continue
 
 		m, intercept = line_params
+
+		if line_name == "left_line":
+			intercept -= side_offset_px
+		elif line_name == "right_line":
+			intercept += side_offset_px
+
 		x_bot = _x_bottom_from_points(line["start"], line["end"])
+		if line_name == "left_line":
+			x_bot -= side_offset_px
+		elif line_name == "right_line":
+			x_bot += side_offset_px
 
 		detected_lines.append(
 			{
+				"name": line_name,
 				"m": m,
 				"b": intercept,
 				"x_bot": x_bot,

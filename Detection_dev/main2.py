@@ -6,32 +6,46 @@ from ultralytics import YOLO
 from keras import models
 from typing import Dict, Final
 from pathlib import Path
+from tqdm import tqdm
+from typing import Final, List
 
 # Importy lokalne
 from algorithms.lane_detection_brute.lane_detection_brute import runLaneDetection
 from utils.points import build_lines_equations
 from utils.car import Car
-from utils.radar import Radar
-from utils.utils import drawCustomBox, plotRadarComparison, matchClustersToCars
+from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
+from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines
+import matplotlib.pyplot as plt
 
 
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
-VIDEO_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/rgb(11).mp4")
-# VIDEO_PATH = os.path.join(DATA_DIR, "normal_traffic/rgb.mp4")
-CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/overtake.csv")
+
+# Speeding
+# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/speeding1/rgb.mp4")
+# CSV_PATH = os.path.join(DATA_DIR, "alarm/speeding1/radar_points_world.csv")
+
+# overtaking
+VIDEO_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/rgb.mp4")
+CSV_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/radar_points_world.csv")
+
+# Lane departure
+# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/trajectory_change1/rgb.mp4")
+# CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.csv")
+
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 CNN_MODEL_PATH = os.path.join(DATA_DIR, "models", "cnn.h5")
 OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
 
 # yolo
+ROAD_WIDTH_METERS = 7.0
 FOV = 20.0
 
 START_TIME = 0
 CONF_THRESHOLD = 0.8
 IMGSZ = 800
 ALLOWED_CLASSES_IDS = [0]
-MAX_MISSING_FRAMES = 30
+MAX_MISSING_FRAMES = 5
 LINE_THICKNESS = 1
 TRACK_COLOR = (0, 255, 0)
 
@@ -42,12 +56,19 @@ TEXT_POSITION_X: Final[int] = 20
 TEXT_POSITION_Y_START: Final[int] = 30
 TEXT_LINE_SPACING: Final[int] = 30
 
+LANE_SIDE_OFFSET_PX: Final[float] = 50
+
 LANE_DEPARTURE_COLOR: Final[tuple] = (0, 0, 255)
 ALARM_COLOR: Final[tuple] = (0, 0, 255)
 ALARM_SQUARE_SIZE: Final[int] = 40
 ALARM_MARGIN: Final[int] = 20
 ALARM_ACTIVE = False
 
+BOX_COLOR: Final[tuple] = (0, 255, 0)
+BOX_THICKNESS: Final[int] = 2
+
+SPEED_LIMIT_KMH: Final[float] = 50.0
+SPEED_LIMIT: Final[float] = SPEED_LIMIT_KMH / 3.6
 # radar
 RADAR_STEP_INTERVAL = 10
 MASK_Z_MIN = 30.0
@@ -60,11 +81,10 @@ WINDOW_NAME = "Traffic Analysis"
 WAIT_KEY_MS = 1
 EXIT_KEY = ord('q')
 
-def activateAlarm():
+def activateAlarm() -> None:
     global ALARM_ACTIVE
     ALARM_ACTIVE = True
-    print("ALARM: Lane departure detected!")
-
+    print("]ALARM!]")
 
 if __name__ == "__main__":
     model = YOLO(YOLO_MODEL_PATH)
@@ -97,7 +117,7 @@ if __name__ == "__main__":
             success, frame = cap.read()
             if not success: break
 
-            staleIds = [carId for carId, carObj in carsDict.items() if carObj.lastSeen < frameIndex - MAX_MISSING_FRAMES]
+            staleIds = [carId for carId, carObj in carsDict.items() if carObj.lastSeen < frameIndex - 5]
             for carId in staleIds: del carsDict[carId]
             
             if frameIndex == 0:
@@ -107,14 +127,14 @@ if __name__ == "__main__":
                 print(f"cached_lanes_path = {cached_lanes_path}")
                 if cached_lanes_path.exists():
                     lines_path = cached_lanes_path
+                elif cached_lanes_path.exists():
+                    lines_path = cached_lanes_path
                 else:
-                    lines_path = runLaneDetection(videoName="lines_det.mp4",showVideo=True,PASSES_COUNT=6)
+                    lines_path = runLaneDetection(videoName="lines_det.mp4",showVideo=False,PASSES_COUNT=12)
 
-                detected_lines = build_lines_equations(lines_path)
+                detected_lines = build_lines_equations(lines_path, side_offset_px=LANE_SIDE_OFFSET_PX)
                 # lines = getManualLaneLines(VIDEO_PATH)
                 # detected_lines = [{'m': -0.608171, 'b': 763.608171, 'x_bot': 106.783658, 'abs_m': 0.608171}, {'m': 0.605019, 'b': 1157.789963, 'x_bot': 1811.210037, 'abs_m': 0.605019}]
-                # detected_lines = [{'m': -0.7025392986698912, 'b': 1002.1221281741233, 'x_bot': 243.37968561064088, 'abs_m': 0.7025392986698912}, {'m': 0.5273390036452005, 'b': 925.2199270959903, 'x_bot': 1494.746051032807, 'abs_m': 0.5273390036452005}]
-                # detected_lines = [{'m': -0.735399284862932, 'b': 1010.0250297973778, 'x_bot': 215.79380214541118, 'abs_m': 0.735399284862932}, {'m': 0.5978520286396182, 'b': 914.3090692124105, 'x_bot': 1559.989260143198, 'abs_m': 0.5978520286396182}]
                 y=0
                 xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
                 xRight = (detected_lines[1]['m'] * y) + detected_lines[1]['b']
@@ -126,16 +146,25 @@ if __name__ == "__main__":
                 radar.clusterPoints()
                 # radar.visualizeClusteredStep()
                 clusterCenters = radar.getClusterCenters()
-                
-                #cluster centers to już są samochody 
+
+                for cluster in clusterCenters:
+                    currentVelocity: float = abs(cluster['radial_velocity'])
+                    if currentVelocity > SPEED_LIMIT:
+                        activateAlarm();
+                        print(f"[WARNING] Speed limit exceeded by cluster: {currentVelocity:.2f} m/s")
+
                 #TODO przkeorczenuie prędkosci 
 
+                posGlobalYDifference = 0.0
                 plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters)
-                dist = matchClustersToCars(carsDict, clusterCenters, frameIndex)
+                matchedDist = matchClustersToCars(carsDict, clusterCenters, frameIndex)
+                if posGlobalYDifference == 0.0 and matchedDist > 0.0:
+                    posGlobalYDifference = matchedDist
                 
            
             results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
             annotatedFrame = frame.copy()
+
             # TODO handle it via arg or smth
             # Draw lines for testing
             
@@ -172,7 +201,7 @@ if __name__ == "__main__":
 
                     car = carsDict[trackId]
 
-                    car.posGlobalYDifference = dist
+    
                     car.update(
                         boxXywh,
                         conf,
@@ -184,16 +213,22 @@ if __name__ == "__main__":
                         FOV,
                         frame_time,
                         IMGSZ,
-                        radar
+                        radar,
+                        posGlobalYDifference
                     )
 
-                    laneDepartureDetected = car.updateLaneState(detected_lines, frameIndex)
+                    laneDepartureDetected = car.updateLaneState(
+                        detected_lines,
+                        frameIndex,
+                        centerX=float(boxXywh[0]),
+                        centerY=float(boxXywh[1]),
+                    )
                     if laneDepartureDetected:
                         activateAlarm()
-                        print(f"[ALERT] Lane departure | ID={trackId} | frame={frameIndex}")
+                        print(f"[WARNING] Lane departure | ID={trackId} | frame={frameIndex}")
 
                     if car.isOutsideLane:
-                        print(f"[OUTSIDE_LANE] ID={trackId} | frame={frameIndex}")
+                        print(f"[WARNING] ID={trackId} | frame={frameIndex}")
 
                     drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.type, car.pos[-1].x, car.pos[-1].y, car.velo[-1].v)
 
