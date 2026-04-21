@@ -30,6 +30,8 @@ OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
 DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth") # NEW
 DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2") # NEW
 DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output") # NEW
+NPY_PATH = os.path.join(DEPTH_OUTPUT_DIR, "base_depth.npy") # NEW
+
 
 # yolo
 ROAD_WIDTH_METERS = 7.0
@@ -104,15 +106,19 @@ if __name__ == "__main__":
     ## ---
 
     ## ----- NEW ----- Initialize depth processor and save base depth map for the last frame (where no car is detected) to be used as reference for depth comparison 
-    depthProcessor = DepthV2(modelPath=DEPTH_MODEL_PATH, libPath=DEPTH_LIB_PATH)
+    if os.path.exists(NPY_PATH):
+        print("DepthV2: loaded depth map from base_depth.npy file.")
+        baseDepthMap = np.load(NPY_PATH)
+    else:
+        depthProcessor = DepthV2(modelPath=DEPTH_MODEL_PATH, libPath=DEPTH_LIB_PATH)
 
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames - 1)
-    _, lastFrame = cap.read()
-    cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps)) 
-
-    baseDepthMap = depthProcessor.getDepthMap(lastFrame)
-    depthProcessor.saveDepthMap(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth")
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames - 1)
+        _, lastFrame = cap.read()
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
+        
+        baseDepthMap = depthProcessor.getDepthMap(lastFrame)
+        depthProcessor.saveDepthMap(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth")
     ## -----
 
     carsDict: Dict[int, Car] = {}
