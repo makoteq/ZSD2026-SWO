@@ -35,12 +35,12 @@ DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 # CSV_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/radar_points_world.csv")
 
 # overtaking
-VIDEO_PATH = os.path.join(DATA_DIR, "alarm/overtaking2/video_day(4).mp4")
-CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/overtaking2/video_day(4).mp4")
+# CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.csv")
 
 # Lane departure
-# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/trajectory_change1/rgb.mp4")
-# CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "alarm/trajectory_change1/rgb.mp4")
+CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.csv")
 
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 CNN_MODEL_PATH = os.path.join(DATA_DIR, "models", "cnn.h5")
@@ -297,18 +297,6 @@ if __name__ == "__main__":
                         print(f"[WARNING] ID={trackId} | frame={frameIndex}")
 
                     drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.type, car.pos[-1].x, car.pos[-1].y, car.velo[-1].v)
-
-                    if car.isOutsideLane and car.laneDepartureFrame >= 0:
-                        x1, y1, _, _ = map(int, boxXyxy)
-                        cv2.putText(
-                            annotatedFrame,
-                            "LANE DEPARTURE",
-                            (x1, max(20, y1 - 12)),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.6,
-                            LANE_DEPARTURE_COLOR,
-                            2,
-                        )
 
                     points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
                     cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
