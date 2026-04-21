@@ -12,7 +12,9 @@ from datetime import datetime
 import s_single_speeding
 import s_pull_over
 import s_overtake
-import s_normal_trafic
+import s_normal_traffic
+import s_overtake_legal
+import s_speeding_legal
 
 run_start_sim_time = 0.0
 # sensor loc
@@ -48,7 +50,9 @@ SCENARIOS_TO_RUN = [
     # ("single_speeding", s_single_speeding, "Single Speeding"),
     # ("speeding", scenario_speeding, "Speeding"),
     # ("lane_change", scenario_lane_change, "Lane Change"),
-    ("overtaking", s_overtake, "Overtaking"),
+    #("overtaking", s_overtake, "Overtaking"),
+    #("overtaking_legal", s_overtake_legal, "Overtaking Legal"),
+    ("speeding_legal", s_speeding_legal, "Speeding Legal"),
     # anomalys:
     # ("pull_over", s_pull_over, "Pull Over To Shoulder"),
 ]
