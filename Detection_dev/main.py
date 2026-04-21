@@ -14,15 +14,16 @@ from algorithms.lane_detection_brute.lane_detection_brute import runLaneDetectio
 from utils.points import build_lines_equations
 from utils.car import Car
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
-from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines
+from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, plotYOffsetCorrelation
 import matplotlib.pyplot as plt
 
 
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
+SCENERIO = "normalTraffic_DistMarkers"
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
-VIDEO_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/rgb.mp4")
-# VIDEO_PATH = os.path.join(DATA_DIR, "normal_traffic/rgb.mp4")
-CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.csv")
+VIDEO_PATH = os.path.join(DATA_DIR,SCENERIO, "rgb.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR,SCENERIO, "radar_points_world.csv")
+CSV_PATH = os.path.join(DATA_DIR,SCENERIO, "car.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 CNN_MODEL_PATH = os.path.join(DATA_DIR, "models", "cnn.h5")
 OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
@@ -49,7 +50,7 @@ TEXT_LINE_SPACING: Final[int] = 30
 BOX_COLOR: Final[tuple] = (0, 255, 0)
 BOX_THICKNESS: Final[int] = 2
 
-SPEED_LIMIT_KMH: Final[float] = 30.0
+SPEED_LIMIT_KMH: Final[float] = 60.0
 SPEED_LIMIT: Final[float] = SPEED_LIMIT_KMH / 3.6
 # radar
 RADAR_STEP_INTERVAL = 10
@@ -64,6 +65,9 @@ WAIT_KEY_MS = 1
 EXIT_KEY = ord('q')
 
 if __name__ == "__main__":
+    
+    # correctionFunc = plotYOffsetCorrelation(CSV_PATH)
+    correctionFunc = lambda x: 0.0
     model = YOLO(YOLO_MODEL_PATH)
     cnn = models.load_model(CNN_MODEL_PATH, compile=False)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -72,7 +76,7 @@ if __name__ == "__main__":
     if not cap.isOpened():
         exit(1)
 
-    radar: Radar = Radar(CSV_PATH, START_TIME)
+    radar: Radar = Radar(RADAR_CSV_PATH, START_TIME)
     radar.applyMask(MASK_Z_MIN, MASK_Z_MAX, MASK_Y_MIN, MASK_Y_MAX)
     radar.findLane()
 
@@ -131,38 +135,14 @@ if __name__ == "__main__":
 
                 #TODO przkeorczenuie prędkosci 
 
-                posGlobalYDifference = 0.0
+
                 plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters)
-                matchedDist = matchClustersToCars(carsDict, clusterCenters, frameIndex)
-                if posGlobalYDifference == 0.0 and matchedDist > 0.0:
-                    posGlobalYDifference = matchedDist
+                dist  = matchClustersToCars(carsDict, clusterCenters, frameIndex)
+                print(dist)
                 
-           
             results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
             annotatedFrame = frame.copy()
 
-            # TODO handle it via arg or smth
-            # Draw lines for testing
-            
-            # LANE_LINE_COLOR = (0, 200, 255)
-            # LANE_LINE_THICKNESS = 2
-            # y_top = 0
-            # y_bottom = frameHeight - 1
-            # for line in detected_lines:
-            #     m = line.get('m')
-            #     b = line.get('b')
-            #     if m is None or b is None:
-            #         continue
-
-            #     x_top = int((m * y_top) + b)
-            #     x_bottom = int((m * y_bottom) + b)
-            #     cv2.line(
-            #         annotatedFrame,
-            #         (x_top, y_top),
-            #         (x_bottom, y_bottom),
-            #         LANE_LINE_COLOR,
-            #         LANE_LINE_THICKNESS,
-            #     )
 
 
             if results[0].boxes.id is not None:
@@ -190,10 +170,12 @@ if __name__ == "__main__":
                         frame_time,
                         IMGSZ,
                         radar,
-                        posGlobalYDifference
+                        correctionFunc
                     )
 
                     drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.type, car.pos[-1].x, car.pos[-1].y, car.velo[-1].v)
+
+                    save_car_to_csv(car, trackId, frameIndex, CSV_PATH)
 
                     points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
                     cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
@@ -218,4 +200,5 @@ if __name__ == "__main__":
         cap.release()
         out.release()
         cv2.destroyAllWindows()
+
 

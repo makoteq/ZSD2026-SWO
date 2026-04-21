@@ -2,13 +2,13 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 from .radar import Radar
-from typing import Dict, List, Tuple, Any, Final, Union
+from typing import Dict, List, Tuple, Any, Final, Union, Callable
 
 IMAGE_WIDTH: Final[int] = 128
 IMAGE_HEIGHT: Final[int] = 128
 IMG_SIZE: Final[Tuple[int, int]] = (IMAGE_WIDTH, IMAGE_HEIGHT)
 NORM_FACTOR: Final[float] = 255.0
-posGlobalYDifference = 28.0
+OFFSET = 28.0
 SMOOTHING_WINDOW_SIZE: Final[int] = 8
 
 CATEGORY_MAP: Final[Dict[int, str]] = {
@@ -44,7 +44,7 @@ class Car:
         self.pos: List[position] = []
         self.velo: List[velocity] = []
         
-        self.posGlobalYDifference: float = 0.0
+
         self.posDifference: position = position(x=0.0, y=0.0, frame=-1)
         self.veloDifference: velocity = velocity(v=0.0, frame=-1)
 
@@ -52,6 +52,8 @@ class Car:
         self.radarVel.append(velocity(v=0.0, frame=-1))
         self.pos.append(position(x=0.0, y=0.0, frame=-1))
         self.velo.append(velocity(v=0.0, frame=-1))
+
+        self.correctionFunc: Callable[[float], float] = lambda x: 0.0
 
         self.history: List[Tuple[float, float]] = []
         self.maxConfidence = 0.0
@@ -132,6 +134,10 @@ class Car:
 
         return laneDepartureDetected
 
+    def getCorrectedDistance(self, cameraDist: float) -> float:
+        offset = self.correctionFunc(cameraDist)
+        return float(cameraDist + offset)
+    
     def calcDistance(self, detectedLines: List[Any], roadWidthH0Px: float, roadWidthMeters: float) -> float:
         yBottom = self.y + (self.h / 2.0)
         xLeft = (detectedLines[0]['m'] * yBottom) + detectedLines[0]['b']
@@ -156,7 +162,7 @@ class Car:
         laneWidthMeters = abs(self.radar.maxX - self.radar.minX)
 
         x = self.radar.minX + (relativePos * laneWidthMeters)
-        y = self.calcDistance(detectedLines, roadWidthH0Px, laneWidthMeters)
+        y = self.getCorrectedDistance(self.calcDistance(detectedLines, roadWidthH0Px, laneWidthMeters))
 
         return float(x), float(y)
 
@@ -176,12 +182,12 @@ class Car:
         return category, confidence, classProbs, kValue
 
     def update(self, box: Tuple[float, float, float, float], confidence: float, frame: np.ndarray, frameIndex: int, cnnModel: Any, 
-                detectedLines: Any, roadWidthH0Px: float, fov: float, frameTime: float, imgSize: int, radar: Radar, 
-                posGlobalYDifference: float) -> None:
+                detectedLines: Any, roadWidthH0Px: float, fov: float, frameTime: float, imgSize: int, radar: Radar, CorrectionFunc: Callable[[float], float]) -> None:
         
         self.x, self.y, self.w, self.h = box
         self.history.append((float(self.x), float(self.y)))
         self.frame_index = frameIndex
+        self.correctionFunc = CorrectionFunc
         self.frame_height = frame.shape[0]
         self.frame_width = frame.shape[1]
         self.lastConfidence = confidence
@@ -189,7 +195,7 @@ class Car:
         self.imgSize = imgSize 
         self.fov = fov
         self.radar = radar
-        self.posGlobalYDifference = float(posGlobalYDifference)
+
 
         rawX, rawY = self.calcPosition(detectedLines, roadWidthH0Px)
         currentV = float(self.velo[-1].v)
@@ -199,7 +205,7 @@ class Car:
             latestRadarVel = self.radarVel[-1]
 
             diffX = float(latestRadarPos.x - rawX)
-            diffY = float(latestRadarPos.y - (rawY + self.posGlobalYDifference))
+            diffY = float(latestRadarPos.y - (rawY + OFFSET))
             self.posDifference = position(x=diffX, y=diffY, frame=frameIndex)
 
             currentV = float(latestRadarVel.v)
@@ -207,7 +213,7 @@ class Car:
 
         finalPos = position(
             x=float(rawX + self.posDifference.x),
-            y=float(rawY + self.posGlobalYDifference + self.posDifference.y),
+            y=float(rawY + self.posDifference.y + OFFSET),
             frame=frameIndex
         )
         
@@ -232,3 +238,4 @@ class Car:
 
     def calcBreakingDistance(self) -> float:
         return 0.0
+    
