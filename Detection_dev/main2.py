@@ -7,7 +7,7 @@ from keras import models
 from typing import Dict, Final
 from pathlib import Path
 from tqdm import tqdm
-from typing import Final, List
+from typing import Final, List, Tuple
 
 # Importy lokalne
 from algorithms.lane_detection_brute.lane_detection_brute import runLaneDetection
@@ -15,19 +15,28 @@ from utils.points import build_lines_equations
 from utils.car import Car
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
 from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines
+from utils.depth_v2 import DepthV2, rankCarsByDepth, rankCarsObjectsByDepth
 import matplotlib.pyplot as plt
 
 
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 
+# Control
+# VIDEO_PATH = os.path.join(DATA_DIR, "normal_traffic/lines_det2.mp4")
+# CSV_PATH = os.path.join(DATA_DIR, "alarm/speeding1/radar_points_world.csv")
+
 # Speeding
 # VIDEO_PATH = os.path.join(DATA_DIR, "alarm/speeding1/rgb.mp4")
 # CSV_PATH = os.path.join(DATA_DIR, "alarm/speeding1/radar_points_world.csv")
 
 # overtaking
-VIDEO_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/rgb.mp4")
-CSV_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/radar_points_world.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/rgb.mp4")
+# CSV_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/radar_points_world.csv")
+
+# overtaking
+VIDEO_PATH = os.path.join(DATA_DIR, "alarm/overtaking2/video_day(4).mp4")
+CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.csv")
 
 # Lane departure
 # VIDEO_PATH = os.path.join(DATA_DIR, "alarm/trajectory_change1/rgb.mp4")
@@ -36,6 +45,9 @@ CSV_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/radar_points_world.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 CNN_MODEL_PATH = os.path.join(DATA_DIR, "models", "cnn.h5")
 OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
+DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth")
+DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
+DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output")
 
 # yolo
 ROAD_WIDTH_METERS = 7.0
@@ -55,8 +67,6 @@ TEXT_SCALE: Final[float] = 0.7
 TEXT_POSITION_X: Final[int] = 20
 TEXT_POSITION_Y_START: Final[int] = 30
 TEXT_LINE_SPACING: Final[int] = 30
-
-LANE_SIDE_OFFSET_PX: Final[float] = 50
 
 LANE_DEPARTURE_COLOR: Final[tuple] = (0, 0, 255)
 ALARM_COLOR: Final[tuple] = (0, 0, 255)
@@ -86,6 +96,31 @@ def activateAlarm() -> None:
     ALARM_ACTIVE = True
     print("]ALARM!]")
 
+
+def detectOvertakesFromRanking(previousOrder: Dict[int, int], currentRanking: List[dict]) -> Tuple[List[Tuple[int, int]], Dict[int, int]]:
+    currentOrder = {int(item['id']): idx for idx, item in enumerate(currentRanking)}
+    overtakes: List[Tuple[int, int]] = []
+
+    if not previousOrder:
+        return overtakes, currentOrder
+
+    commonIds = [carId for carId in currentOrder.keys() if carId in previousOrder]
+
+    for idx, firstId in enumerate(commonIds):
+        for secondId in commonIds[idx + 1:]:
+            firstPrev = previousOrder[firstId]
+            secondPrev = previousOrder[secondId]
+            firstCurrent = currentOrder[firstId]
+            secondCurrent = currentOrder[secondId]
+
+            # Overtake happens when order between two cars is reversed.
+            if firstPrev > secondPrev and firstCurrent < secondCurrent:
+                overtakes.append((firstId, secondId))
+            elif secondPrev > firstPrev and secondCurrent < firstCurrent:
+                overtakes.append((secondId, firstId))
+
+    return overtakes, currentOrder
+
 if __name__ == "__main__":
     model = YOLO(YOLO_MODEL_PATH)
     cnn = models.load_model(CNN_MODEL_PATH, compile=False)
@@ -108,7 +143,19 @@ if __name__ == "__main__":
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(OUTPUT_VIDEO_PATH, fourcc, int(fps), (frameWidth, frameHeight))
 
+    # Initialize depth processor and prepare base depth map from the last frame.
+    depthProcessor = DepthV2(modelPath=DEPTH_MODEL_PATH, libPath=DEPTH_LIB_PATH)
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames - 1)
+    _, lastFrame = cap.read()
+    cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
+
+    baseDepthMap = depthProcessor.getDepthMap(lastFrame)
+    depthProcessor.saveDepthMap(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth")
+
     carsDict: Dict[int, Car] = {}
+    previousDepthOrder: Dict[int, int] = {}
     frameIndex = 0
 
     try:
@@ -122,18 +169,22 @@ if __name__ == "__main__":
             
             if frameIndex == 0:
                 # # Check if lines.json exists in cache
-                project_root = Path(__file__).resolve().parents[1]
-                cached_lanes_path = project_root / "data" / "output" / "lines.json"
-                print(f"cached_lanes_path = {cached_lanes_path}")
-                if cached_lanes_path.exists():
-                    lines_path = cached_lanes_path
-                elif cached_lanes_path.exists():
-                    lines_path = cached_lanes_path
-                else:
-                    lines_path = runLaneDetection(videoName="lines_det.mp4",showVideo=False,PASSES_COUNT=12)
+                # project_root = Path(__file__).resolve().parents[1]
+                # cached_lanes_path = project_root / "data" / "output" / "lines.json"
+                # print(f"cached_lanes_path = {cached_lanes_path}")
+                # if cached_lanes_path.exists():
+                #     lines_path = cached_lanes_path
+                # elif cached_lanes_path.exists():
+                #     lines_path = cached_lanes_path
+                # else:
+                # lines_path = runLaneDetection(videoName="lines_det2.mp4",showVideo=True,PASSES_COUNT=18)
 
-                detected_lines = build_lines_equations(lines_path, side_offset_px=LANE_SIDE_OFFSET_PX)
+                # detected_lines = build_lines_equations(lines_path)
                 # lines = getManualLaneLines(VIDEO_PATH)
+                
+                detected_lines = [{'m': -0.7331838565022422, 'b': 833.3654708520179, 'x_bot': -574.3475336322871, 'abs_m': 0.7331838565022422}, {'m': 0.7252252252252253, 'b': 609.4729729729729, 'x_bot': 2001.9054054054054, 'abs_m': 0.7252252252252253}]
+
+                # detected_lines = [{'m': -0.6843345111896348, 'b': 992.7126030624264, 'x_bot': 253.6313309776208, 'abs_m': 0.6843345111896348}, {'m': 0.5268817204301075, 'b': 924.5483870967743, 'x_bot': 1493.5806451612902, 'abs_m': 0.5268817204301075}]
                 # detected_lines = [{'m': -0.608171, 'b': 763.608171, 'x_bot': 106.783658, 'abs_m': 0.608171}, {'m': 0.605019, 'b': 1157.789963, 'x_bot': 1811.210037, 'abs_m': 0.605019}]
                 y=0
                 xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
@@ -195,6 +246,22 @@ if __name__ == "__main__":
                 trackIds = results[0].boxes.id.int().cpu().tolist()
                 confidences = results[0].boxes.conf.cpu().tolist()
 
+                currentFrameCars = [
+                    {'id': tid, 'x1': int(box[0]), 'y1': int(box[1]),
+                     'x2': int(box[2]), 'y2': int(box[3])}
+                    for tid, box in zip(trackIds, boxesXyxy)
+                ]
+                ranked = rankCarsByDepth(baseDepthMap, currentFrameCars)
+                print(f"Frame {frameIndex} | ranking: {ranked}")
+                overtakes, previousDepthOrder = detectOvertakesFromRanking(previousDepthOrder, ranked)
+                for overtakerId, overtakenId in overtakes:
+                    activateAlarm()
+                    print(
+                        f"[WARNING] Overtaking detected by depth ranking | overtaker ID={overtakerId} "
+                        f"passed ID={overtakenId} | frame={frameIndex}"
+                    )
+                # rankedCars = rankCarsObjectsByDepth(baseDepthMap, currentFrameCars, carsDict)
+
                 for boxXyxy, boxXywh, trackId, conf in zip(boxesXyxy, boxesXywh, trackIds, confidences):
                     if trackId not in carsDict:
                         carsDict[trackId] = Car(trackId)
@@ -214,7 +281,7 @@ if __name__ == "__main__":
                         frame_time,
                         IMGSZ,
                         radar,
-                        posGlobalYDifference
+                        lambda _dist: posGlobalYDifference
                     )
 
                     laneDepartureDetected = car.updateLaneState(
