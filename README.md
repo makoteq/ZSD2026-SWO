@@ -25,5 +25,5 @@ This project integrates various open-source components. All utilized tools and d
 | Ultralytics YOLO (YOLOv26n) | GNU Affero General Public License v3.0 |
 | Google Coral | Apache License 2.0 |
 | Raspberry Pi (4 or 5) |Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA) licence |
-
+| Depth-Anything-V2 | Apache License 2.0 |
 ---
