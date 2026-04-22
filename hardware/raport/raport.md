@@ -21,7 +21,7 @@ Zbadano wydajność Raspberry Pi4 + Google Corlal podczas testowamia modelu best
 
 ## Porównanie parametrów wykrywania samochodów z użyciem algorytmu ROI i bez
 
-![]param_comp_roi.png)
+![](param_comp_roi.png)
 
 # 2. Wydajność systemowa
 ## Algorytm z ROI 
