@@ -31,6 +31,12 @@ class velocity:
     v: float
     frame: int
 
+@dataclass
+class size:
+    w: float
+    h: float
+    frame: int
+
 class Car:
     def __init__(self, trackId: int):
         self.trackId = trackId
@@ -43,8 +49,9 @@ class Car:
         self.radarVel: List[velocity] = []
         self.pos: List[position] = []
         self.velo: List[velocity] = []
-        
+        self.size: List[size] = []
 
+        self.size.append(size(w=0.0, h=0.0, frame=-1))
         self.posDifference: position = position(x=0.0, y=0.0, frame=-1)
         self.veloDifference: velocity = velocity(v=0.0, frame=-1)
 
@@ -149,6 +156,41 @@ class Car:
         
         distance = (roadWidthMeters * roadWidthH0Px) * self.fov / pixelWidthAtY
         return float(distance)
+
+    def getSize(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:
+        import math
+
+        yBottom = self.y + (self.h / 2.0)
+
+        xLeft = (detectedLines[0]['m'] * yBottom) + detectedLines[0]['b']
+        xRight = (detectedLines[1]['m'] * yBottom) + detectedLines[1]['b']
+
+        laneWidthPx = abs(xRight - xLeft)
+        if laneWidthPx < 1e-6:
+            return 0.0, 0.0
+
+        laneWidthMeters = abs(self.radar.maxX - self.radar.minX)
+
+        distance = self.getCorrectedDistance(
+            self.calcDistance(detectedLines, roadWidthH0Px, laneWidthMeters)
+        )
+
+        if distance <= 0:
+            return 0.0, 0.0
+
+        fov_rad = math.radians(self.fov if self.fov > 0 else 60.0)
+
+        scene_width = 2.0 * distance * math.tan(fov_rad / 2.0)
+
+        box_width_ratio = self.w / max(self.frame_width, 1)
+        box_height_ratio = self.h / max(self.frame_height, 1)
+
+        w_m = box_width_ratio * scene_width
+
+        height_scale = 0.6
+        h_m = box_height_ratio * scene_width * height_scale
+
+        return float(w_m), float(h_m)
     
     def calcPosition(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:
         yBottom = self.y + (self.h / 2.0)
@@ -199,6 +241,15 @@ class Car:
 
         rawX, rawY = self.calcPosition(detectedLines, roadWidthH0Px)
         currentV = float(self.velo[-1].v)
+
+        realW, realH = self.getSize(detectedLines, roadWidthH0Px)
+        self.size.append(
+            size(
+                w=float(realW),
+                h=float(realH),
+                frame=frameIndex
+            )
+        )
 
         if self.radarPos[-1].frame == frameIndex:
             latestRadarPos = self.radarPos[-1]

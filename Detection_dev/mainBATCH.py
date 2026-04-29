@@ -10,7 +10,7 @@ from typing import Dict, Final, List, Tuple
 # Importy lokalne
 from utils.car import Car
 from utils.radar import Radar
-from utils.utils import drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines
+from utils.utilsBATCH import drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines
 from utils.depth_v2 import DepthV2, rankCarsByDepth
 
 
@@ -371,12 +371,12 @@ def runSingleRecording(
                 del carsDict[carId]
 
             if frameIndex == 0:
-                # lines = getManualLaneLines(VIDEO_PATH)
-                detected_lines = [{'m': -0.6913385826771653, 'b': 876.2346456692912, 'x_bot': -451.13543307086616, 'abs_m': 0.6913385826771653}, {'m': 0.532235939643347, 'b': 268.9657064471879, 'x_bot': 1290.8587105624142, 'abs_m': 0.532235939643347}]
+                lines = getManualLaneLines(VIDEO_PATH)
+                #detected_lines = [{'m': -0.6913385826771653, 'b': 876.2346456692912, 'x_bot': -451.13543307086616, 'abs_m': 0.6913385826771653}, {'m': 0.532235939643347, 'b': 268.9657064471879, 'x_bot': 1290.8587105624142, 'abs_m': 0.532235939643347}]
 
                 y = 0
-                xLeft = (detected_lines[0]["m"] * y) + detected_lines[0]["b"]
-                xRight = (detected_lines[1]["m"] * y) + detected_lines[1]["b"]
+                xLeft = (lines[0]["m"] * y) + lines[0]["b"]
+                xRight = (lines[1]["m"] * y) + lines[1]["b"]
                 road_width_h0_px = abs(xRight - xLeft)
 
             if frameIndex % RADAR_STEP_INTERVAL == 0:
@@ -413,7 +413,7 @@ def runSingleRecording(
             LANE_LINE_THICKNESS = 2
             y_top = 0
             y_bottom = frameHeight - 1
-            for line in detected_lines:
+            for line in lines:
                 m = line.get("m")
                 b = line.get("b")
                 if m is None or b is None:
@@ -471,7 +471,7 @@ def runSingleRecording(
                         frame,
                         frameIndex,
                         cnn,
-                        detected_lines,
+                        lines,
                         road_width_h0_px,
                         FOV,
                         frame_time,
@@ -481,7 +481,7 @@ def runSingleRecording(
                     )
 
                     laneDepartureDetected = car.updateLaneState(
-                        detected_lines,
+                        lines,
                         frameIndex,
                         centerX=float(boxXywh[0]),
                         centerY=float(boxXywh[1]),
@@ -501,6 +501,8 @@ def runSingleRecording(
                         car.type,
                         car.pos[-1].x,
                         car.pos[-1].y,
+                        car.size[-1].w,
+                        car.size[-1].h,
                         car.velo[-1].v,
                     )
 
