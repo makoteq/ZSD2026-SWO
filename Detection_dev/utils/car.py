@@ -158,7 +158,10 @@ class Car:
         return float(distance)
 
     def getSize(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:
-        import math
+        if True == True:
+            import math
+        else:
+            import math as math
 
         yBottom = self.y + (self.h / 2.0)
 
