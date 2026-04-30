@@ -252,6 +252,42 @@ def fillBboxesRowMinMasked_hybrid(depthMap: np.ndarray, bboxes: list[dict], padd
     return result
 
 
+# Alternative: changes depth values for the whole row of the whole depth map based on median from row without pixels from bboxes
+def flattenRowsMedianBackground(depthMap: np.ndarray, bboxes: list[dict], paddingFactor: float = 0.05, useMedian: bool = True) -> np.ndarray:
+    
+    result = depthMap.copy()
+    h, w = result.shape
+
+    paddedBboxes = []
+    for bbox in bboxes:
+        bboxW = int(bbox['x2']) - int(bbox['x1'])
+        bboxH = int(bbox['y2']) - int(bbox['y1'])
+        padX = int(bboxW * paddingFactor)
+        padY = int(bboxH * paddingFactor)
+
+        x1 = max(0, min(int(bbox['x1']) - padX, w - 1))
+        x2 = max(0, min(int(bbox['x2']) + padX, w - 1))
+        y1 = max(0, min(int(bbox['y1']) - padY, h - 1))
+        y2 = max(0, min(int(bbox['y2']) + padY, h - 1))
+        paddedBboxes.append((x1, y1, x2, y2))
+
+    for row in range(h):
+        bgMask = np.ones(w, dtype=bool)
+        for bx1, by1, bx2, by2 in paddedBboxes:
+            if by1 <= row < by2:
+                bgMask[bx1:bx2] = False
+
+        bgPixels = depthMap[row, bgMask]
+
+        if bgPixels.size == 0:
+            continue
+
+        fillValue = float(np.median(bgPixels) if useMedian else np.mean(bgPixels))
+        result[row, :] = fillValue  
+
+    return result
+
+
 def saveDepthVisualization(depthMap: np.ndarray, outputDir: str, name: str = "depth") -> None:
     """Saves only the PNG visualization of a depth map."""
     os.makedirs(outputDir, exist_ok=True)

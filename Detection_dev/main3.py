@@ -15,7 +15,7 @@ from utils.points import build_lines_equations
 from utils.car import Car
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
 from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines
-from utils.depth_v2 import DepthV2, rankCarsByDepth, rankCarsObjectsByDepth, fillBboxesRowMin, fillBboxesRowMinMasked, fillBboxesRowMinMasked_hybrid, saveDepthVisualization
+from utils.depth_v2 import DepthV2, rankCarsByDepth, rankCarsObjectsByDepth, fillBboxesRowMin, fillBboxesRowMinMasked, fillBboxesRowMinMasked_hybrid, flattenRowsMedianBackground, saveDepthVisualization
 import matplotlib.pyplot as plt
 
 
@@ -119,6 +119,8 @@ if __name__ == "__main__":
     # baseDepthMap = fillBboxesRowMinMasked(baseDepthMap, firstFrameBboxes, paddingFactor=0.05, maskDilation=15)
     # baseDepthMap = fillBboxesRowMinMasked_hybrid(baseDepthMap, firstFrameBboxes, paddingFactor=0.05, maskDilation=15)
 
+    # ALTERNATIVE: fills whole depth map with median, more info in def (MIGHT BE THE BEST AND EASIEST)
+    # baseDepthMap = flattenRowsMedianBackground(baseDepthMap, firstFrameBboxes, paddingFactor=0.05)
     saveDepthVisualization(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth_filled")
     ## -----
 
