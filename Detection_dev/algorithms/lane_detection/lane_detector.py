@@ -14,7 +14,7 @@ class LaneDetector:
             'hough_threshold': 0,  # To be calculated based on image diagonal
             'hough_min_length': 0, # To be calculated based on image diagonal
             'hough_max_gap': 0,    # To be calculated based on image diagonal
-            'vp_tolerance_percentage': 0.02, # of the image diagonal, for vanishing point consistency check
+            'vp_tolerance_percentage': 0.2, # of the image diagonal, for vanishing point consistency check
             'vp_tolerance': 0 # To be calculated based on image diagonal
         }
         if config:
@@ -185,6 +185,9 @@ class LaneDetector:
                 ul['b'] = new_b
                 ul['x_bot'] = new_m * height + new_b
 
+            y_coords = pts_array[:, 0, 1]
+            ul['weight'] = float(np.max(y_coords) - np.min(y_coords))
+
         unique_lines.sort(key=lambda x: x['weight'], reverse=True)
 
         import itertools
@@ -291,7 +294,7 @@ class LaneDetector:
 
         return classical_lines
 
-    def draw_on_original(self, original_img, classical_lines):
+    def draw_lines(self, original_img, classical_lines):
         result_img = original_img.copy()
         h_orig = original_img.shape[0]
 
