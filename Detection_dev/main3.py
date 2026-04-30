@@ -15,7 +15,7 @@ from utils.points import build_lines_equations
 from utils.car import Car
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
 from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines
-from utils.depth_v2 import DepthV2, rankCarsByDepth, rankCarsObjectsByDepth # NEW
+from utils.depth_v2 import DepthV2, rankCarsByDepth, rankCarsObjectsByDepth, fillBboxesRowMin, fillBboxesRowMinMasked, fillBboxesRowMinMasked_hybrid, saveDepthVisualization
 import matplotlib.pyplot as plt
 
 
@@ -27,10 +27,10 @@ CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 CNN_MODEL_PATH = os.path.join(DATA_DIR, "models", "cnn.h5")
 OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
-DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth") # NEW
-DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2") # NEW
-DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output") # NEW
-NPY_PATH = os.path.join(DEPTH_OUTPUT_DIR, "base_depth.npy") # NEW
+DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth") 
+DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2") 
+DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output") 
+NPY_PATH = os.path.join(DEPTH_OUTPUT_DIR, "base_depth.npy") 
 
 
 # yolo
@@ -91,34 +91,35 @@ if __name__ == "__main__":
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(OUTPUT_VIDEO_PATH, fourcc, int(fps), (frameWidth, frameHeight))
 
-    ## --- NEW --- Saves snapshot of the last frame where no car is detected, useless
-    snapshot_output_path = os.path.join(DATA_DIR, "output", "test_snapshot.jpg")
-    os.makedirs(os.path.dirname(snapshot_output_path), exist_ok=True)
+    ## --- NEW ----- Relative Depth Map for the FIRST frame -----
+    cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
+    _, firstFrame = cap.read()
+    cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
 
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    if total_frames > 0:
-        start_pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-        cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames - 1)
-        snapshot_success, snapshot_frame = cap.read()
-        if snapshot_success:
-            cv2.imwrite(snapshot_output_path, snapshot_frame)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_pos)
-    ## ---
-
-    ## ----- NEW ----- Initialize depth processor and save base depth map for the last frame (where no car is detected) to be used as reference for depth comparison 
     if os.path.exists(NPY_PATH):
         print("DepthV2: loaded depth map from base_depth.npy file.")
         baseDepthMap = np.load(NPY_PATH)
     else:
         depthProcessor = DepthV2(modelPath=DEPTH_MODEL_PATH, libPath=DEPTH_LIB_PATH)
-
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames - 1)
-        _, lastFrame = cap.read()
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
-        
-        baseDepthMap = depthProcessor.getDepthMap(lastFrame)
+        baseDepthMap = depthProcessor.getDepthMap(firstFrame)
         depthProcessor.saveDepthMap(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth")
+
+    firstFrameResults = model.predict(
+        source=firstFrame, imgsz=IMGSZ, conf=CONF_THRESHOLD,
+        verbose=False, device=0 if device == 'cuda' else 'cpu',
+        classes=ALLOWED_CLASSES_IDS
+    )
+    firstFrameBboxes = [
+        {'x1': box[0], 'y1': box[1], 'x2': box[2], 'y2': box[3]}
+        for box in firstFrameResults[0].boxes.xyxy.cpu().numpy()
+    ] if firstFrameResults[0].boxes is not None else []
+
+    # CHOOSE one of the 3 func below for filling the bboxes of detected cars in the depth map of the first frame
+    baseDepthMap = fillBboxesRowMin(baseDepthMap, firstFrameBboxes, paddingFactor=0.05)
+    # baseDepthMap = fillBboxesRowMinMasked(baseDepthMap, firstFrameBboxes, paddingFactor=0.05, maskDilation=15)
+    # baseDepthMap = fillBboxesRowMinMasked_hybrid(baseDepthMap, firstFrameBboxes, paddingFactor=0.05, maskDilation=15)
+
+    saveDepthVisualization(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth_filled")
     ## -----
 
     carsDict: Dict[int, Car] = {}
@@ -207,7 +208,7 @@ if __name__ == "__main__":
                 trackIds = results[0].boxes.id.int().cpu().tolist()
                 confidences = results[0].boxes.conf.cpu().tolist()
                 
-                ## --- NEW --- Build list of detected cars in the current frame and rank them, biger value means closer to the camera
+                ## Build list of detected cars in the current frame and rank them, biger value means closer to the camera
                 currentFrameCars = [
                     {'id': tid, 'x1': int(box[0]), 'y1': int(box[1]),
                                 'x2': int(box[2]), 'y2': int(box[3])}
@@ -215,8 +216,7 @@ if __name__ == "__main__":
                 ]
                 ranked = rankCarsByDepth(baseDepthMap, currentFrameCars) 
                 print(f"Frame {frameIndex} | ranking: {ranked}")
-                # rankedCars = rankCarsObjectsByDepth(baseDepthMap, currentFrameCars, carsDict) # additional depoend on your need - returns list of Car objects sorted by depth, closest first
-                ## ---
+                # rankedCars = rankCarsObjectsByDepth(baseDepthMap, currentFrameCars, carsDict) # does the same as rankCarsByDepth, different format
 
                 for boxXyxy, boxXywh, trackId, conf in zip(boxesXyxy, boxesXywh, trackIds, confidences):
                     if trackId not in carsDict:
