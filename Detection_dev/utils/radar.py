@@ -24,7 +24,7 @@ MASK_Z_MAX = 50.0
 MASK_Y_MIN = 0.0
 MASK_Y_MAX = 120.0
 
-CORNER_OFFSET = 0.3
+CORNER_OFFSET = 0.0
 
 POINT_SIZE = 20
 OPACITY_LEVEL = 0.8
@@ -53,6 +53,11 @@ LINE_COLOR = "red"
 CENTERLINE_COLOR = "yellow"
 LINE_WIDTH_VIS = 2
 
+MAX_DISTANCE_ERROR = 0.1 
+MAX_AZIMUTH_ERROR_DEG = 0.25
+MAX_ELEVATION_ERROR_DEG = 0.25
+MAX_VELOCITY_ERROR = 0.1
+
 INITIAL_TIME_VALUE = 0.0
 LOOP_ITERATIONS = 50
 TIME_STEP_DEFAULT = 0.5
@@ -71,6 +76,7 @@ class Radar:
         self.clusterCenters: List[Dict[str, float]] = []
         self.loadData()
         self.adjustPoints(SENSOR_PITCH_DEG, SENSOR_YAW_DEG, SENSOR_ROLL_DEG, CAMERA_HEIGHT_OFFSET)
+        
    
     def loadData(self) -> None:
         basePath: str = os.path.dirname(os.path.abspath(__file__))
@@ -172,6 +178,54 @@ class Radar:
         deltaY: float = float(farLowest[COLUMN_Y].mean() - closeLowest[COLUMN_Y].mean())
         return float(np.degrees(np.arctan2(deltaZ, deltaY)))
 
+    def visualize(self) -> None:
+        if self.dataFrame.empty:
+            print("No radar data to visualize.")
+            return
+
+        self.findLane()
+        minZ = float(self.dataFrame[Z_COLUMN].min())
+        maxZ = float(self.dataFrame[Z_COLUMN].max())
+        z_range = maxZ - minZ if maxZ != minZ else 1.0
+
+        fig = plt.figure(figsize=(FIG_SIZE_X, FIG_SIZE_Y))
+        ax = fig.add_subplot(111, projection='3d')
+
+        ax.scatter(
+            self.dataFrame[X_COLUMN], 
+            self.dataFrame[Y_COLUMN], 
+            self.dataFrame[Z_COLUMN],
+            s=POINT_SIZE / 4, 
+            alpha=0.4,
+            color='royalblue',
+            label="Cloud of points"
+        )
+
+        midX = (self.minX + self.maxX) / 2
+        groundZ = 0.0
+
+        ax.plot([self.minX, self.minX], [self.minY, self.maxY], [groundZ, groundZ], 
+                color='red', linewidth=LINE_WIDTH_VIS, label="Lanes")
+        ax.plot([self.maxX, self.maxX], [self.minY, self.maxY], [groundZ, groundZ], 
+                color='red', linewidth=LINE_WIDTH_VIS)
+
+        ax.plot([midX, midX], [self.minY, self.maxY], [groundZ, groundZ], 
+                color='red', linestyle="--", linewidth=1, alpha=0.7)
+        x_span = self.maxX - self.minX
+        y_span = self.maxY - self.minY
+        ax.set_box_aspect((x_span, y_span, z_range))
+        ax.set_xlim(self.minX, self.maxX)
+        ax.set_ylim(self.minY, self.maxY)
+        ax.set_zlim(minZ, maxZ)
+        
+        ax.set_xlabel("X (Width) [m]")
+        ax.set_ylabel("Y (Distance) [m]")
+        ax.set_zlabel("Z (Height) [m]")
+        
+        plt.legend()
+        plt.tight_layout()
+        plt.show(block=True)
+
     def findLane(self): 
         if self.dataFrame.empty:
             return {"minX": 0.0, "maxX": 0.0, "minY": 0.0, "maxY": 0.0}
@@ -237,8 +291,27 @@ class Radar:
         ].copy()
         
         if not self.dataFrame.empty:
-            # self.t0 = float(self.dataFrame[COLUMN_TIME].min())
             self.currentTime = self.t0
+
+    def addNoise(self) -> None:
+            if self.dataFrame.empty:
+                return
+            if (MAX_DISTANCE_ERROR == 0 and MAX_AZIMUTH_ERROR_DEG == 0 and 
+                MAX_ELEVATION_ERROR_DEG == 0 and MAX_VELOCITY_ERROR == 0):
+                return
+
+            x = self.dataFrame[X_COLUMN].values
+            y = self.dataFrame[Y_COLUMN].values
+            z = self.dataFrame[Z_COLUMN].values
+            dist = np.sqrt(x**2 + y**2 + z**2)
+            dist = np.where(dist == 0, 1e-9, dist)
+            az_factor = np.radians(MAX_AZIMUTH_ERROR_DEG)
+            el_factor = np.radians(MAX_ELEVATION_ERROR_DEG)
+            self.dataFrame[X_COLUMN] += np.random.uniform(-1, 1, size=len(x)) * (dist * az_factor)
+            self.dataFrame[Y_COLUMN] += np.random.uniform(-MAX_DISTANCE_ERROR, MAX_DISTANCE_ERROR, size=len(y))
+            self.dataFrame[Z_COLUMN] += np.random.uniform(-1, 1, size=len(z)) * (dist * el_factor)
+            if MAX_VELOCITY_ERROR > 0:
+                self.dataFrame[COLUMN_VELOCITY] += np.random.uniform(-MAX_VELOCITY_ERROR, MAX_VELOCITY_ERROR, size=len(x))
 
     def getClusterCenters(self) -> List[Dict[str, float]]:
             if self.pointsSwap.empty:

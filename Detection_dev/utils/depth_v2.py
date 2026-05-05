@@ -4,6 +4,7 @@ import numpy as np
 import sys
 import os
 from typing import Final, Any
+import matplotlib.pyplot as plt
 
 ENCODER: Final[str] = 'vits'
 FEATURES: Final[int] = 64
@@ -44,7 +45,15 @@ class DepthV2:
     def getDepthMap(self, frame: np.ndarray) -> np.ndarray:
         with torch.no_grad():
             depth = self.model.infer_image(frame)
-        return depth.astype(np.float32)
+            depthData = depth.astype(np.float32)
+
+            plt.imshow(depthData, cmap='magma', interpolation='nearest')
+            plt.colorbar(label='Depth')
+            plt.title('Depth Map Heatmap')
+            plt.axis('off')
+            plt.show()
+
+        return depthData
 
     def saveDepthMap(self, depthMap: np.ndarray, outputDir: str, name: str = "depth") -> None:
         os.makedirs(outputDir, exist_ok=True)

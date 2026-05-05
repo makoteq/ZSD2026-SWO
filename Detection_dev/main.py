@@ -14,6 +14,7 @@ from algorithms.lane_detection_brute.lane_detection_brute import runLaneDetectio
 from utils.points import build_lines_equations
 from utils.car import Car
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
+from utils.depth_v2 import DepthV2
 from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, plotYOffsetCorrelation
 import matplotlib.pyplot as plt
 
@@ -27,6 +28,10 @@ CSV_PATH = os.path.join(DATA_DIR,SCENERIO, "car.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 CNN_MODEL_PATH = os.path.join(DATA_DIR, "models", "cnn.h5")
 OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
+DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2", "depth_anything_v2_vits.pth")
+DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
+DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
+
 
 # yolo
 ROAD_WIDTH_METERS = 7.0
@@ -67,6 +72,7 @@ EXIT_KEY = ord('q')
 if __name__ == "__main__":
     
     # correctionFunc = plotYOffsetCorrelation(CSV_PATH)
+
     correctionFunc = lambda x: 0.0
     model = YOLO(YOLO_MODEL_PATH)
     cnn = models.load_model(CNN_MODEL_PATH, compile=False)
@@ -78,7 +84,11 @@ if __name__ == "__main__":
 
     radar: Radar = Radar(RADAR_CSV_PATH, START_TIME)
     radar.applyMask(MASK_Z_MIN, MASK_Z_MAX, MASK_Y_MIN, MASK_Y_MAX)
+    radar.addNoise()
     radar.findLane()
+    radar.visualize()
+
+
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     print(f"FPS: {fps}")
@@ -88,6 +98,13 @@ if __name__ == "__main__":
     frameHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(OUTPUT_VIDEO_PATH, fourcc, int(fps), (frameWidth, frameHeight))
+
+    depthProcessor = DepthV2(modelPath=DEPTH_MODEL_PATH, libPath=DEPTH_LIB_PATH)
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    frame = cap.read()[1]
+    baseDepthMap = depthProcessor.getDepthMap(frame)
+    depthProcessor.saveDepthMap(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth")
 
     carsDict: Dict[int, Car] = {}
     frameIndex = 0
@@ -102,24 +119,13 @@ if __name__ == "__main__":
             for carId in staleIds: del carsDict[carId]
             
             if frameIndex == 0:
-                # # Check if lines.json exists in cache
-                # project_root = Path(__file__).resolve().parents[1]
-                # cached_lanes_path = project_root / "data" / "output" / "lines.json"
-                # print(f"cached_lanes_path = {cached_lanes_path}")
-                # if cached_lanes_path.exists():
-                #     lines_path = cached_lanes_path
-                # elif cached_lanes_path.exists():
-                #     lines_path = cached_lanes_path
-                # else:
-                #     lines_path = runLaneDetection(showVideo=False,PASSES_COUNT=12)
-
-                # detected_lines = build_lines_equations(lines_path)
-                # lines = getManualLaneLines(VIDEO_PATH)
                 detected_lines = [{'m': -0.608171, 'b': 763.608171, 'x_bot': 106.783658, 'abs_m': 0.608171}, {'m': 0.605019, 'b': 1157.789963, 'x_bot': 1811.210037, 'abs_m': 0.605019}]
                 y=0
                 xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
                 xRight = (detected_lines[1]['m'] * y) + detected_lines[1]['b']
                 road_width_h0_px = abs(xRight - xLeft)
+
+
 
             if frameIndex % RADAR_STEP_INTERVAL == 0:
                 radar_setp = frame_time * RADAR_STEP_INTERVAL
