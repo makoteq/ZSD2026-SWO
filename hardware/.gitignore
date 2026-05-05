@@ -18,6 +18,8 @@ setup.sh
 dataset/
 milestone/
 misc/
+depth/
+output/
 YOLObenchmarks/CARLA_test/
 YOLObenchmarks/CARLA_test2/
 YOLObenchmarks/CARLA_test3/
