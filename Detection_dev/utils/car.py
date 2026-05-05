@@ -168,10 +168,6 @@ class Car:
         return float(distance)
 
     def getSize(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:
-        if True == True:
-            import math
-        else:
-            import math as math
 
         yBottom = self.y + (self.h / 2.0)
 
@@ -191,17 +187,16 @@ class Car:
         if distance <= 0:
             return 0.0, 0.0
 
-        fov_rad = math.radians(self.fov if self.fov > 0 else 60.0)
+        fov_rad = np.radians(self.fov if self.fov > 0 else 60.0)
 
-        scene_width = 2.0 * distance * math.tan(fov_rad / 2.0)
+        scene_width = 2.0 * distance * np.tan(fov_rad / 2.0)
 
         box_width_ratio = self.w / max(self.frame_width, 1)
         box_height_ratio = self.h / max(self.frame_height, 1)
 
         w_m = box_width_ratio * scene_width
 
-        height_scale = 0.6
-        h_m = box_height_ratio * scene_width * height_scale
+        h_m = box_height_ratio * scene_width
 
         return float(w_m), float(h_m)
 
@@ -213,17 +208,18 @@ class Car:
         mass = 546.97*dimensions
 
         if mass <= 1500:
-            category = 'microlino'
-            breaking_approx = 0.01111
+            category = 'light'
+            breaking_approx = 4.444e-6
         elif mass <= 2000:
-            category = 'sedan'
-            breaking_approx = 0.00665
+            category = 'medium'
+            breaking_approx = 2.66e-6
         elif mass > 2000:
-            category = 'pickup'
-            breaking_approx = 0.00547
+            category = 'large'
+            breaking_approx = 2.188e-6
 
         self.mass = float(mass)
-        distance = float(breaking_approx * mass)
+        #distance = float(breaking_approx * mass * (self.velo[-1].v ** 2)) no velocity detection so constant used instead:
+        distance = float(breaking_approx * mass * (100.0 ** 2))
         self.breakingDistance = distance
         self.stoppingDistance.append(stoppingDistance(distance=distance, mass=float(mass)))
 
