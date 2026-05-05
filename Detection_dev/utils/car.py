@@ -4,6 +4,8 @@ import numpy as np
 from .radar import Radar
 from typing import Dict, List, Tuple, Any, Final, Union, Callable
 
+#from ..algorithms.model_training.vehicle_classification_CNN.dataset import mass_factor
+
 IMAGE_WIDTH: Final[int] = 128
 IMAGE_HEIGHT: Final[int] = 128
 IMG_SIZE: Final[Tuple[int, int]] = (IMAGE_WIDTH, IMAGE_HEIGHT)
@@ -37,6 +39,11 @@ class size:
     h: float
     frame: int
 
+@dataclass
+class stoppingDistance:
+    distance: float
+    mass : float
+
 class Car:
     def __init__(self, trackId: int):
         self.trackId = trackId
@@ -44,6 +51,9 @@ class Car:
         self.y = 0.0
         self.w = 0.0
         self.h = 0.0
+
+        self.stoppingDistance: List[stoppingDistance] = []
+        self.stoppingDistance.append(stoppingDistance(distance=0.0, mass=0.0))
 
         self.radarPos: List[position] = []
         self.radarVel: List[velocity] = []
@@ -194,7 +204,31 @@ class Car:
         h_m = box_height_ratio * scene_width * height_scale
 
         return float(w_m), float(h_m)
-    
+
+    def calcStoppingDistance(self):
+        last_size = self.size[-1]
+        if last_size.w <= 0 or last_size.h <= 0:
+            return
+        dimensions = last_size.w + last_size.h
+        mass = 546.97*dimensions
+
+        if mass <= 1500:
+            category = 'microlino'
+            breaking_approx = 0.01111
+        elif mass <= 2000:
+            category = 'sedan'
+            breaking_approx = 0.00665
+        elif mass > 2000:
+            category = 'pickup'
+            breaking_approx = 0.00547
+
+        self.mass = float(mass)
+        distance = float(breaking_approx * mass)
+        self.breakingDistance = distance
+        self.stoppingDistance.append(stoppingDistance(distance=distance, mass=float(mass)))
+
+
+
     def calcPosition(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:
         yBottom = self.y + (self.h / 2.0)
         xCar = self.x
@@ -253,6 +287,9 @@ class Car:
                 frame=frameIndex
             )
         )
+        self.calcStoppingDistance()
+
+
 
         if self.radarPos[-1].frame == frameIndex:
             latestRadarPos = self.radarPos[-1]
@@ -288,8 +325,5 @@ class Car:
                 self.type = category
                 self.mass = float(k)
 
-        self.breakingDistance = self.calcBreakingDistance()
 
-    def calcBreakingDistance(self) -> float:
-        return 0.0
     
