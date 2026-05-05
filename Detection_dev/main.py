@@ -64,7 +64,7 @@ MASK_Z_MAX = 50.0
 MASK_Y_MIN = 75
 MASK_Y_MAX = 130.0
 
-# window
+
 WINDOW_NAME = "Traffic Analysis"
 WAIT_KEY_MS = 1
 EXIT_KEY = ord('q')
