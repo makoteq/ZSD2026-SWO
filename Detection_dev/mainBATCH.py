@@ -498,7 +498,8 @@ def runSingleRecording(
                         boxXyxy,
                         trackId,
                         conf,
-                        car.type,
+                        #car.type,
+                        car.stoppingDistance[-1].car_category,
                         car.pos[-1].x,
                         car.pos[-1].y,
                         car.size[-1].w,
@@ -642,4 +643,3 @@ if __name__ == "__main__":
         )
     else:
         raise ValueError(f"Nieznany RUN_MODE={RUN_MODE}. Uzyj: 'single' albo 'batch'.")
-

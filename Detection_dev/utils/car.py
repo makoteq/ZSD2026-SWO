@@ -4,7 +4,7 @@ import numpy as np
 from .radar import Radar
 from typing import Dict, List, Tuple, Any, Final, Union, Callable
 
-#from ..algorithms.model_training.vehicle_classification_CNN.dataset import mass_factor
+# from ..algorithms.model_training.vehicle_classification_CNN.dataset import mass_factor
 
 IMAGE_WIDTH: Final[int] = 128
 IMAGE_HEIGHT: Final[int] = 128
@@ -22,16 +22,19 @@ CATEGORY_MAP: Final[Dict[int, str]] = {
     5: "van",
 }
 
+
 @dataclass
 class position:
     x: float
     y: float
     frame: int
 
+
 @dataclass
 class velocity:
     v: float
     frame: int
+
 
 @dataclass
 class size:
@@ -39,10 +42,13 @@ class size:
     h: float
     frame: int
 
+
 @dataclass
 class stoppingDistance:
     distance: float
-    mass : float
+    mass: float
+    car_category: str = 'medium'
+
 
 class Car:
     def __init__(self, trackId: int):
@@ -79,8 +85,8 @@ class Car:
         self.lastSeen = -1
         self.updateCount = 0
         self.type = "unknown"
-        self.mass = 0.0 
-        self.deacceleration = 0.0 
+        self.mass = 0.0
+        self.deacceleration = 0.0
         self.breakingDistance = 0.0
         self.fov = 0.0
         self.frame_height = 0.0
@@ -125,11 +131,11 @@ class Car:
         return laneLeft, laneRight
 
     def updateLaneState(
-        self,
-        detectedLines: List[Any],
-        frameIndex: int,
-        centerX: Union[float, None] = None,
-        centerY: Union[float, None] = None,
+            self,
+            detectedLines: List[Any],
+            frameIndex: int,
+            centerX: Union[float, None] = None,
+            centerY: Union[float, None] = None,
     ) -> bool:
         laneCenterX = float(self.x if centerX is None else centerX)
         laneCenterY = float(self.y if centerY is None else centerY)
@@ -154,16 +160,16 @@ class Car:
     def getCorrectedDistance(self, cameraDist: float) -> float:
         offset = self.correctionFunc(cameraDist)
         return float(cameraDist + offset)
-    
+
     def calcDistance(self, detectedLines: List[Any], roadWidthH0Px: float, roadWidthMeters: float) -> float:
         yBottom = self.y + (self.h / 2.0)
         xLeft = (detectedLines[0]['m'] * yBottom) + detectedLines[0]['b']
         xRight = (detectedLines[1]['m'] * yBottom) + detectedLines[1]['b']
         pixelWidthAtY = abs(xRight - xLeft)
-        
+
         if pixelWidthAtY == 0:
             return 0.0
-        
+
         distance = (roadWidthMeters * roadWidthH0Px) * self.fov / pixelWidthAtY
         return float(distance)
 
@@ -205,34 +211,33 @@ class Car:
         if last_size.w <= 0 or last_size.h <= 0:
             return
         dimensions = last_size.w + last_size.h
-        mass = 546.97*dimensions
+        mass = 546.97 * dimensions
 
+        car_category = 'medium'
         if mass <= 1500:
-            category = 'light'
+            car_category = 'light'
             breaking_approx = 4.444e-6
         elif mass <= 2000:
-            category = 'medium'
-            breaking_approx = 2.66e-6
+            car_category = 'medium'
+            breaking_approx = 4.188e-6
         elif mass > 2000:
-            category = 'large'
-            breaking_approx = 2.188e-6
+            car_category = 'heavy'
+            breaking_approx = 6.444e-6
 
         self.mass = float(mass)
-        #distance = float(breaking_approx * mass * (self.velo[-1].v ** 2)) no velocity detection so constant used instead:
-        distance = float(breaking_approx * mass * (100.0 ** 2))
+        # distance = float(breaking_approx * mass * (self.velo[-1].v ** 2)) no velocity detection so constant used instead:
+        distance = float(breaking_approx * mass * (50.0 ** 2))
         self.breakingDistance = distance
-        self.stoppingDistance.append(stoppingDistance(distance=distance, mass=float(mass)))
-
-
+        self.stoppingDistance.append(stoppingDistance(distance=distance, mass=float(mass),car_category=car_category))
 
     def calcPosition(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:
         yBottom = self.y + (self.h / 2.0)
         xCar = self.x
-        
+
         xLeft = (detectedLines[0]['m'] * yBottom) + detectedLines[0]['b']
         xRight = (detectedLines[1]['m'] * yBottom) + detectedLines[1]['b']
         laneWidthPx = xRight - xLeft
-        
+
         relativePos = (xCar - xLeft) / laneWidthPx if abs(laneWidthPx) > 1e-6 else 0.5
         laneWidthMeters = abs(self.radar.maxX - self.radar.minX)
 
@@ -256,9 +261,11 @@ class Car:
 
         return category, confidence, classProbs, kValue
 
-    def update(self, box: Tuple[float, float, float, float], confidence: float, frame: np.ndarray, frameIndex: int, cnnModel: Any, 
-                detectedLines: Any, roadWidthH0Px: float, fov: float, frameTime: float, imgSize: int, radar: Radar, CorrectionFunc: Callable[[float], float]) -> None:
-        
+    def update(self, box: Tuple[float, float, float, float], confidence: float, frame: np.ndarray, frameIndex: int,
+               cnnModel: Any,
+               detectedLines: Any, roadWidthH0Px: float, fov: float, frameTime: float, imgSize: int, radar: Radar,
+               CorrectionFunc: Callable[[float], float]) -> None:
+
         self.x, self.y, self.w, self.h = box
         self.history.append((float(self.x), float(self.y)))
         self.frame_index = frameIndex
@@ -267,10 +274,9 @@ class Car:
         self.frame_width = frame.shape[1]
         self.lastConfidence = confidence
         self.lastSeen = frameIndex
-        self.imgSize = imgSize 
+        self.imgSize = imgSize
         self.fov = fov
         self.radar = radar
-
 
         rawX, rawY = self.calcPosition(detectedLines, roadWidthH0Px)
         currentV = float(self.velo[-1].v)
@@ -284,8 +290,6 @@ class Car:
             )
         )
         self.calcStoppingDistance()
-
-
 
         if self.radarPos[-1].frame == frameIndex:
             latestRadarPos = self.radarPos[-1]
@@ -303,12 +307,12 @@ class Car:
             y=float(rawY + self.posDifference.y + OFFSET),
             frame=frameIndex
         )
-        
+
         self.pos.append(finalPos)
         self.velo.append(velocity(v=currentV, frame=frameIndex))
 
         self.updateCount += 1
-        
+
         if confidence > self.maxConfidence:
             self.maxConfidence = confidence
             x1, y1 = int(self.x - self.w / 2), int(self.y - self.h / 2)
@@ -322,4 +326,3 @@ class Car:
                 self.mass = float(k)
 
 
-    
