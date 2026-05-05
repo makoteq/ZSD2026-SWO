@@ -297,10 +297,6 @@ class Radar:
         if self.dataFrame.empty:
             return
 
-        if (MAX_DISTANCE_ERROR == 0 and MAX_AZIMUTH_ERROR_DEG == 0 and 
-            MAX_ELEVATION_ERROR_DEG == 0 and MAX_VELOCITY_ERROR == 0):
-            return
-
         x = self.dataFrame[X_COLUMN].values
         y = self.dataFrame[Y_COLUMN].values
         z = self.dataFrame[Z_COLUMN].values

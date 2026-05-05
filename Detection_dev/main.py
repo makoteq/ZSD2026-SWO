@@ -88,8 +88,6 @@ if __name__ == "__main__":
     radar.findLane()
     radar.visualize()
 
-
-
     fps = cap.get(cv2.CAP_PROP_FPS)
     print(f"FPS: {fps}")
     frame_time = 1.0 / fps
