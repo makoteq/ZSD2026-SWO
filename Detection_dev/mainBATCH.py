@@ -1,4 +1,3 @@
-main batch
 import os
 import torch
 import cv2
