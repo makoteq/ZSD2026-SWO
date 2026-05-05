@@ -53,7 +53,7 @@ LINE_COLOR = "red"
 CENTERLINE_COLOR = "yellow"
 LINE_WIDTH_VIS = 2
 
-MAX_DISTANCE_ERROR = 0.1 
+MAX_DISTANCE_ERROR = 0.5
 MAX_AZIMUTH_ERROR_DEG = 0.25
 MAX_ELEVATION_ERROR_DEG = 0.25
 MAX_VELOCITY_ERROR = 0.1
@@ -294,21 +294,38 @@ class Radar:
             self.currentTime = self.t0
 
     def addNoise(self) -> None:
-            if self.dataFrame.empty:
-                return
-   
-            x = self.dataFrame[X_COLUMN].values
-            y = self.dataFrame[Y_COLUMN].values
-            z = self.dataFrame[Z_COLUMN].values
-            dist = np.sqrt(x**2 + y**2 + z**2)
-            dist = np.where(dist == 0, 1e-9, dist)
-            az_factor = np.radians(MAX_AZIMUTH_ERROR_DEG)
-            el_factor = np.radians(MAX_ELEVATION_ERROR_DEG)
-            self.dataFrame[X_COLUMN] += np.random.uniform(-1, 1, size=len(x)) * (dist * az_factor)
-            self.dataFrame[Y_COLUMN] += np.random.uniform(-MAX_DISTANCE_ERROR, MAX_DISTANCE_ERROR, size=len(y))
-            self.dataFrame[Z_COLUMN] += np.random.uniform(-1, 1, size=len(z)) * (dist * el_factor)
-            if MAX_VELOCITY_ERROR > 0:
-                self.dataFrame[COLUMN_VELOCITY] += np.random.uniform(-MAX_VELOCITY_ERROR, MAX_VELOCITY_ERROR, size=len(x))
+        if self.dataFrame.empty:
+            return
+
+        if (MAX_DISTANCE_ERROR == 0 and MAX_AZIMUTH_ERROR_DEG == 0 and 
+            MAX_ELEVATION_ERROR_DEG == 0 and MAX_VELOCITY_ERROR == 0):
+            return
+
+        x = self.dataFrame[X_COLUMN].values
+        y = self.dataFrame[Y_COLUMN].values
+        z = self.dataFrame[Z_COLUMN].values
+        v = self.dataFrame[COLUMN_VELOCITY].values
+
+        dx = x
+        dy = y
+        dz = z - CAMERA_HEIGHT_OFFSET
+
+        dist = np.sqrt(dx**2 + dy**2 + dz**2)
+        azimuth = np.arctan2(dx, dy)
+        elevation = np.arctan2(dz, np.sqrt(dx**2 + dy**2))
+
+        n_dist = dist + np.random.uniform(-MAX_DISTANCE_ERROR, MAX_DISTANCE_ERROR, size=len(dist))
+        n_az = azimuth + np.radians(np.random.uniform(-MAX_AZIMUTH_ERROR_DEG, MAX_AZIMUTH_ERROR_DEG, size=len(azimuth)))
+        n_el = elevation + np.radians(np.random.uniform(-MAX_ELEVATION_ERROR_DEG, MAX_ELEVATION_ERROR_DEG, size=len(elevation)))
+
+        cos_el = np.cos(n_el)
+        
+        self.dataFrame[X_COLUMN] = n_dist * cos_el * np.sin(n_az)
+        self.dataFrame[Y_COLUMN] = n_dist * cos_el * np.cos(n_az)
+        self.dataFrame[Z_COLUMN] = (n_dist * np.sin(n_el)) + CAMERA_HEIGHT_OFFSET
+
+        if MAX_VELOCITY_ERROR > 0:
+            self.dataFrame[COLUMN_VELOCITY] = v + np.random.uniform(-MAX_VELOCITY_ERROR, MAX_VELOCITY_ERROR, size=len(v))
 
     def getClusterCenters(self) -> List[Dict[str, float]]:
             if self.pointsSwap.empty:
