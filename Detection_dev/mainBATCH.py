@@ -1,3 +1,4 @@
+main batch
 import os
 import torch
 import cv2
@@ -37,8 +38,8 @@ DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 # VIDEO_PATH = os.path.join(DATA_DIR, "alarm/trajectory_change1/rgb.mp4")
 # CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.csv")
 
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.mp4")
-CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/test/1_fov16.0_pitch-12.0.mp4")
+CSV_PATH = os.path.join(DATA_DIR, "dataset/test/1_fov16.0_pitch-12.0.csv")
 
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 CNN_MODEL_PATH = os.path.join(DATA_DIR, "models", "cnn.h5")
@@ -504,6 +505,7 @@ def runSingleRecording(
                         car.size[-1].w,
                         car.size[-1].h,
                         car.velo[-1].v,
+                        car.stoppingDistance[-1].distance,
                     )
 
                     points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
