@@ -6,8 +6,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple, Dict, Any, Final
-from .car import position, velocity
-
+from .car import position, velocity, stoppingDistance
 
 TRACK_COLOR: Final[Tuple[int, int, int]] = (0, 255, 0)
 BBOX_COLOR: Final[Tuple[int, int, int]] = (255, 255, 255)
@@ -26,12 +25,13 @@ def drawCustomBox(
     w: float,
     h: float,
     speed: float,
+    distance: float,
 ) -> None:
     x1, y1, x2, y2 = map(int, boxXyxy)
     
     line1 = f"{carType.upper()} ID:{trackId} | {conf:.2f}"
     line2 = f"x: {x:.1f}m y: {y:.1f}m | S: {speed:.1f}m/s"
-    line3 = f"w: {w:.2f}m h: {h:.2f}m"
+    line3 = f"w: {w:.2f}m h: {h:.2f}m | B: {distance:.2f}m"
 
     cv2.rectangle(annotatedFrame, (x1, y1), (x2, y2), BBOX_COLOR, LINE_THICKNESS)
 
