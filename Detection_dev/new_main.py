@@ -18,17 +18,37 @@ from utils.depth_v2 import DepthV2
 from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, plotYOffsetCorrelation
 import matplotlib.pyplot as plt
 
-
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
-SCENERIO = "normalTraffic_DistMarkers"
+SCENERIO = "output"
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
-VIDEO_PATH = os.path.join(DATA_DIR,SCENERIO, "rgb.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR,SCENERIO, "radar_points_world.csv")
+
+# Control
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
+
+# Speeding
+# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/speeding1/rgb.mp4")
+# CSV_PATH = os.path.join(DATA_DIR, "alarm/speeding1/radar_points_world.csv")
+
+# overtaking
+# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/rgb.mp4")
+# CSV_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/radar_points_world.csv")
+
+# overtaking
+# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/overtaking2/video_day(4).mp4")
+# CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.csv")
+
+# Lane departure
+# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/trajectory_change1/rgb.mp4")
+# CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.csv")
+
+
+
 CSV_PATH = os.path.join(DATA_DIR,SCENERIO, "car.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 CNN_MODEL_PATH = os.path.join(DATA_DIR, "models", "cnn.h5")
 OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
-DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2", "depth_anything_v2_vits.pth")
+DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth")
 DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
 DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
 
