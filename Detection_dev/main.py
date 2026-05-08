@@ -28,7 +28,7 @@ CSV_PATH = os.path.join(DATA_DIR,SCENERIO, "car.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 CNN_MODEL_PATH = os.path.join(DATA_DIR, "models", "cnn.h5")
 OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
-DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2", "depth_anything_v2_vits.pth")
+DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth")
 DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
 DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
 
@@ -167,7 +167,6 @@ if __name__ == "__main__":
                         conf,
                         frame,
                         frameIndex, 
-                        cnn,
                         detected_lines,
                         road_width_h0_px,
                         FOV,
@@ -177,7 +176,16 @@ if __name__ == "__main__":
                         correctionFunc
                     )
 
-                    drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.type, car.pos[-1].x, car.pos[-1].y, car.velo[-1].v)
+                    drawCustomBox(
+                        annotatedFrame,
+                        boxXyxy,
+                        trackId,
+                        conf,
+                        car.pos[-1].x,
+                        car.pos[-1].y,
+                        car.velo[-1].v,
+                        car.stoppingDistance[-1].distance,
+                    )
 
                     save_car_to_csv(car, trackId, frameIndex, CSV_PATH)
 

@@ -153,6 +153,7 @@ if __name__ == "__main__":
 
                 for cluster in clusterCenters:
                     currentVelocity: float = abs(cluster['radial_velocity'])
+                    ##TODO dodać obliczanie czy wychamuj na podstawie drogi hamowania jesli nie wychamuje to 2 stopeń alarmu
                     if currentVelocity > SPEED_LIMIT:
                         print(f"[WARNING] Speed limit exceeded by cluster: {currentVelocity:.2f} m/s")
 
