@@ -137,7 +137,11 @@ if __name__ == "__main__":
             for carId in staleIds: del carsDict[carId]
             
             if frameIndex == 0:
-                detected_lines = [{'m': -0.608171, 'b': 763.608171, 'x_bot': 106.783658, 'abs_m': 0.608171}, {'m': 0.605019, 'b': 1157.789963, 'x_bot': 1811.210037, 'abs_m': 0.605019}]
+
+
+                ## TODO dodać wykrywanie linii, dynamiczne 
+                # lines = getManualLaneLines(VIDEO_PATH)
+                detected_lines = [{'m': -0.6859375, 'b': 876.8265625, 'x_bot': -440.1734375, 'abs_m': 0.6859375}, {'m': 0.5231416549789621, 'b': 283.94389901823286, 'x_bot': 1288.3758765778402, 'abs_m': 0.5231416549789621}]
                 y=0
                 xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
                 xRight = (detected_lines[1]['m'] * y) + detected_lines[1]['b']
