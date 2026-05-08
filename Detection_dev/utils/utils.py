@@ -19,6 +19,7 @@ def drawCustomBox(
     conf: float,
     x: float,
     y: float,
+    cameraDistance: float,
     speed: float,
     stoppingDistance: float,
 ) -> None:
@@ -26,7 +27,7 @@ def drawCustomBox(
     
     line1 = f"CAR ID:{trackId} | {conf:.2f}"
     line2 = f"x: {x:.1f}m y: {y:.1f}m | v: {speed:.1f}m/s"
-    line3 = f"stopping distance: {stoppingDistance:.2f}"
+    line3 = f"camera distance: {cameraDistance:.2f}m, stopping distance: {stoppingDistance:.2f}"
 
     cv2.rectangle(annotatedFrame, (x1, y1), (x2, y2), BBOX_COLOR, LINE_THICKNESS)
 

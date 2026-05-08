@@ -51,7 +51,7 @@ DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
 
 # yolo
 ROAD_WIDTH_METERS = 7.0
-FOV = 20.0
+FOV = 14.0
 
 START_TIME = 0.0
 CONF_THRESHOLD = 0.8
@@ -76,7 +76,7 @@ SPEED_LIMIT: Final[float] = SPEED_LIMIT_KMH / 3.6
 # radar
 RADAR_STEP_INTERVAL = 10
 MASK_Z_MIN = 30.0
-MASK_Z_MAX = 50.0
+MASK_Z_MAX = 100.0
 MASK_Y_MIN = 75
 MASK_Y_MAX = 130.0
 
@@ -135,8 +135,8 @@ if __name__ == "__main__":
 
 
                 ## TODO dodać wykrywanie linii, dynamiczne
-                # lines = getManualLaneLines(VIDEO_PATH)
-                detected_lines = [{'m': -0.6859375, 'b': 876.8265625, 'x_bot': -440.1734375, 'abs_m': 0.6859375}, {'m': 0.5231416549789621, 'b': 283.94389901823286, 'x_bot': 1288.3758765778402, 'abs_m': 0.5231416549789621}]
+                # detected_lines = getManualLaneLines(VIDEO_PATH)
+                detected_lines = [{'m': -0.6904761904761905, 'b': 877.8333333333334, 'x_bot': -447.8809523809524, 'abs_m': 0.6904761904761905}, {'m': 0.5178041543026706, 'b': 289.2655786350149, 'x_bot': 1283.4495548961424, 'abs_m': 0.5178041543026706}]
                 y=0
                 xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
                 xRight = (detected_lines[1]['m'] * y) + detected_lines[1]['b']
@@ -194,7 +194,7 @@ if __name__ == "__main__":
                         correctionFunc
                     )
 
-                    drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.pos[-1].x, car.pos[-1].y,
+                    drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.pos[-1].x, car.pos[-1].y,car.cameraDistance,
                                   car.velo[-1].v, car.stoppingDistance[-1].distance,)
 
                     save_car_to_csv(car, trackId, frameIndex, CSV_PATH)

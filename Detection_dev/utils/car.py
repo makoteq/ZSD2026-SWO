@@ -16,6 +16,8 @@ NORM_FACTOR: Final[float] = 255.0
 OFFSET = 28.0
 SMOOTHING_WINDOW_SIZE: Final[int] = 8
 
+ROAD_WIDTH_METERS = 7.0
+
 @dataclass
 class position:
     x: float
@@ -87,6 +89,8 @@ class Car:
         self.frame_width = 0.0
         self.imgSize = 0.0
         self.radar = None
+
+        self.cameraDistance = 99.0
 
         self.wasInsideLane: Union[bool, None] = None
         self.isOutsideLane = False
@@ -260,6 +264,7 @@ class Car:
         self.radar = radar
 
         rawX, rawY = self.calcPosition(detectedLines, roadWidthH0Px)
+        self.cameraDistance = self.calcDistance(detectedLines, roadWidthH0Px, ROAD_WIDTH_METERS)
         currentV = float(self.velo[-1].v)
 
         realW, realH = self.getSize(detectedLines, roadWidthH0Px)
