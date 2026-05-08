@@ -16,15 +16,14 @@ def drawCustomBox(
     annotatedFrame: np.ndarray, 
     boxXyxy: np.ndarray, 
     trackId: int, 
-    conf: float, 
-    carType: str, 
+    conf: float,
     x: float,
     y: float,
     speed: float,
 ) -> None:
     x1, y1, x2, y2 = map(int, boxXyxy)
     
-    line1 = f"{carType.upper()} ID:{trackId} | {conf:.2f}"
+    line1 = f"CAR ID:{trackId} | {conf:.2f}"
     line2 = f"x: {x:.1f}m y: {y:.1f}m | S: {speed:.1f}m/s"
 
     cv2.rectangle(annotatedFrame, (x1, y1), (x2, y2), BBOX_COLOR, LINE_THICKNESS)

@@ -193,7 +193,7 @@ if __name__ == "__main__":
                         correctionFunc
                     )
 
-                    drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.type, car.pos[-1].x, car.pos[-1].y,
+                    drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.pos[-1].x, car.pos[-1].y,
                                   car.velo[-1].v)
 
                     save_car_to_csv(car, trackId, frameIndex, CSV_PATH)
