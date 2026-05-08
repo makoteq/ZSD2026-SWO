@@ -13,16 +13,6 @@ NORM_FACTOR: Final[float] = 255.0
 OFFSET = 28.0
 SMOOTHING_WINDOW_SIZE: Final[int] = 8
 
-CATEGORY_MAP: Final[Dict[int, str]] = {
-    0: "coupe",
-    1: "hatchback",
-    2: "sedan",
-    3: "suv",
-    4: "truck",
-    5: "van",
-}
-
-
 @dataclass
 class position:
     x: float
@@ -209,7 +199,7 @@ class Car:
     def calcStoppingDistance(self):
         last_size = self.size[-1]
         if last_size.w <= 0 or last_size.h <= 0:
-            return
+            return "medium", 1500
         dimensions = last_size.w + last_size.h
         mass = 546.97 * dimensions
 
@@ -225,10 +215,12 @@ class Car:
             breaking_approx = 6.444e-6
 
         self.mass = float(mass)
-        # distance = float(breaking_approx * mass * (self.velo[-1].v ** 2)) no velocity detection so constant used instead:
-        distance = float(breaking_approx * mass * (50.0 ** 2))
+        distance = float(breaking_approx * mass * (self.velo[-1].v ** 2)) #no velocity detection so constant used instead:
+        #distance = float(breaking_approx * mass * (50.0 ** 2))
         self.breakingDistance = distance
         self.stoppingDistance.append(stoppingDistance(distance=distance, mass=float(mass),car_category=car_category))
+
+        return car_category, mass
 
     def calcPosition(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:
         yBottom = self.y + (self.h / 2.0)
@@ -246,23 +238,7 @@ class Car:
 
         return float(x), float(y)
 
-    def checkType(self, frame: np.ndarray, cnnModel: Any) -> Tuple[str, float, np.ndarray, float]:
-        img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        img = cv2.resize(img, IMG_SIZE)
-        imgArr = np.array(img, dtype=np.float32) / NORM_FACTOR
-        imgBatch = np.expand_dims(imgArr, axis=0)
-
-        classProbs, kPred = cnnModel.predict(imgBatch, verbose=0)
-        classProbs = classProbs[0]
-        kValue = float(kPred[0][0])
-        predIdx = int(np.argmax(classProbs))
-        confidence = float(classProbs[predIdx])
-        category = CATEGORY_MAP[predIdx]
-
-        return category, confidence, classProbs, kValue
-
     def update(self, box: Tuple[float, float, float, float], confidence: float, frame: np.ndarray, frameIndex: int,
-               cnnModel: Any,
                detectedLines: Any, roadWidthH0Px: float, fov: float, frameTime: float, imgSize: int, radar: Radar,
                CorrectionFunc: Callable[[float], float]) -> None:
 
@@ -289,7 +265,6 @@ class Car:
                 frame=frameIndex
             )
         )
-        self.calcStoppingDistance()
 
         if self.radarPos[-1].frame == frameIndex:
             latestRadarPos = self.radarPos[-1]
@@ -310,6 +285,7 @@ class Car:
 
         self.pos.append(finalPos)
         self.velo.append(velocity(v=currentV, frame=frameIndex))
+        category, mass = self.calcStoppingDistance()
 
         self.updateCount += 1
 
@@ -321,8 +297,7 @@ class Car:
             crop = frame[max(0, y1):min(frame.shape[0], y2), max(0, x1):min(frame.shape[1], x2)]
             if crop.size > 0:
                 self.lastCrop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-                category, _, _, k = self.checkType(crop, cnnModel)
                 self.type = category
-                self.mass = float(k)
+                self.mass = float(mass)
 
 
