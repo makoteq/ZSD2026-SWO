@@ -20,11 +20,13 @@ def drawCustomBox(
     x: float,
     y: float,
     speed: float,
+    stoppingDistance: float,
 ) -> None:
     x1, y1, x2, y2 = map(int, boxXyxy)
     
     line1 = f"CAR ID:{trackId} | {conf:.2f}"
-    line2 = f"x: {x:.1f}m y: {y:.1f}m | S: {speed:.1f}m/s"
+    line2 = f"x: {x:.1f}m y: {y:.1f}m | v: {speed:.1f}m/s"
+    line3 = f"stopping distance: {stoppingDistance:.2f}"
 
     cv2.rectangle(annotatedFrame, (x1, y1), (x2, y2), BBOX_COLOR, LINE_THICKNESS)
 
@@ -37,6 +39,7 @@ def drawCustomBox(
 
     cv2.putText(annotatedFrame, line1, (x1 + 5, y1 - (lineHeight * 2) - 5), font, FONT_SCALE, (0, 0, 0), FONT_THICKNESS)
     cv2.putText(annotatedFrame, line2, (x1 + 5, y1 - lineHeight - 5), font, FONT_SCALE, (0, 0, 0), FONT_THICKNESS)
+    cv2.putText(annotatedFrame, line3, (x1 + 5, y1 - 5), font, FONT_SCALE, (0, 0, 0), FONT_THICKNESS)
 
 from typing import Dict, List, Any, Final, Tuple
 

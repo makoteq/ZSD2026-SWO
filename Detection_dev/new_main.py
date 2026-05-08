@@ -11,7 +11,7 @@ from typing import Final, List
 # Importy lokalne
 from algorithms.lane_detection_brute.lane_detection_brute import runLaneDetection
 from utils.points import build_lines_equations
-from utils.car import Car
+from utils.car import Car, stoppingDistance
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
 from utils.depth_v2 import DepthV2
 from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, plotYOffsetCorrelation
@@ -194,7 +194,7 @@ if __name__ == "__main__":
                     )
 
                     drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.pos[-1].x, car.pos[-1].y,
-                                  car.velo[-1].v)
+                                  car.velo[-1].v, car.stoppingDistance[-1].distance,)
 
                     save_car_to_csv(car, trackId, frameIndex, CSV_PATH)
 

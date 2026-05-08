@@ -218,8 +218,7 @@ class Car:
             breaking_approx = 6.444e-6
 
         self.mass = float(mass)
-        distance = float(breaking_approx * mass * (self.velo[-1].v ** 2)*WEATHER_MARKIPLIER) #no velocity detection so constant used instead:
-        #distance = float(breaking_approx * mass * (50.0 ** 2))
+        distance = float(breaking_approx * mass * (self.velo[-1].v ** 2)*WEATHER_MARKIPLIER)
         self.breakingDistance = distance
         self.stoppingDistance.append(stoppingDistance(distance=distance, mass=float(mass),car_category=car_category))
 
