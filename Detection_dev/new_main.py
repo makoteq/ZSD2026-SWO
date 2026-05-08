@@ -76,7 +76,7 @@ SPEED_LIMIT: Final[float] = SPEED_LIMIT_KMH / 3.6
 # radar
 RADAR_STEP_INTERVAL = 10
 MASK_Z_MIN = 30.0
-MASK_Z_MAX = 50.0
+MASK_Z_MAX = 100.0
 MASK_Y_MIN = 0.0
 MASK_Y_MAX = 120.0
 
@@ -152,7 +152,7 @@ if __name__ == "__main__":
                 clusterCenters = radar.getClusterCenters()
 
                 for cluster in clusterCenters:
-                    currentDistance: float = abs(cluster['radial_velocity'])
+                    currentDistance: float = abs(cluster['y_corrected'])
                     ##TODO dodać obliczanie czy wychamuj na podstawie drogi hamowania jesli nie wychamuje to 2 stopeń alarmu
                     print(f"Distance: {currentDistance:.2f} m")
                     currentVelocity: float = abs(cluster['radial_velocity'])
