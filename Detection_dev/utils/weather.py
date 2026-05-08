@@ -7,10 +7,10 @@ import requests
 from datetime import date
 
 ROAD_CONDITION_MULTIPLIER={
-    "dry":    1,
+    "dry":    1.0,
     "rain":   1.7,
-    "snow":   3,
-    "ice":    4,
+    "snow":   3.0,
+    "ice":    4.0,
 
 }
 

@@ -207,21 +207,24 @@ class Car:
         mass = 546.97 * dimensions
 
         car_category = 'medium'
-        if mass <= 1500:
-            car_category = 'light'
-            breaking_approx = 4.444e-6
-        elif mass <= 2000:
-            car_category = 'medium'
-            breaking_approx = 4.188e-6
-        elif mass > 2000:
-            car_category = 'heavy'
-            breaking_approx = 6.444e-6
 
+        if WEATHER_MARKIPLIER == 1:
+            reaction_time = 1.5
+        elif WEATHER_MARKIPLIER == 1.7 or WEATHER_MARKIPLIER == 3:
+            reaction_time = 2.0
+        else:
+            reaction_time = 1.0
+
+        speed = self.velo[-1].v
+        if speed <= 0:
+            speed = 50.0/3.6
+
+        breaking_distance = float(reaction_time * speed) +((speed/10)*3 + (speed/10)**2)*WEATHER_MARKIPLIER
         self.mass = float(mass)
-        distance = float(breaking_approx * mass * (self.velo[-1].v ** 2)*WEATHER_MARKIPLIER)
-        self.breakingDistance = distance
-        self.stoppingDistance.append(stoppingDistance(distance=distance, mass=float(mass),car_category=car_category))
-
+        # distance = float(breaking_approx * mass * (self.velo[-1].v ** 2)) no velocity detection so constant used instead:
+        #distance = float(breaking_approx * mass * (50.0 ** 2))
+        self.breakingDistance = breaking_distance
+        self.stoppingDistance.append(stoppingDistance(distance=breaking_distance, mass=float(mass),car_category=car_category))
         return car_category, mass
 
     def calcPosition(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:
