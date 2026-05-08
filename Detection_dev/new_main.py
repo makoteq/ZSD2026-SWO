@@ -155,7 +155,6 @@ if __name__ == "__main__":
                 for clusterId, cluster in enumerate(clusterCenters):
                     currentDistance: float = abs(cluster['y_corrected'])
                     carId = carMap.get(clusterId)
-                    ##TODO dodać obliczanie czy wychamuj na podstawie drogi hamowania jesli nie wychamuje to 2 stopeń alarmu
                     print(f"Distance: {currentDistance:.2f} m")
                     currentVelocity: float = abs(cluster['radial_velocity'])
                     if currentVelocity > SPEED_LIMIT:
