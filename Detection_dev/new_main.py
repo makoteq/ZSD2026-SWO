@@ -151,17 +151,26 @@ if __name__ == "__main__":
                 # radar.visualizeClusteredStep()
                 clusterCenters = radar.getClusterCenters()
 
-                for cluster in clusterCenters:
+                dist, carMap = matchClustersToCars(carsDict, clusterCenters, frameIndex)
+                print(dist)
+
+                for clusterId, cluster in enumerate(clusterCenters):
                     currentVelocity: float = abs(cluster['radial_velocity'])
-                    ##TODO dodać obliczanie czy wychamuj na podstawie drogi hamowania jesli nie wychamuje to 2 stopeń alarmu
+                    carId = carMap.get(clusterId)
+
                     if currentVelocity > SPEED_LIMIT:
                         print(f"[WARNING] Speed limit exceeded by cluster: {currentVelocity:.2f} m/s")
+                    elif carId is not None and carId in carsDict:
+                        car = carsDict[carId]
+                        stoppingDist = car.stoppingDistance[-1].distance
+                        cameraDist = car.cameraDistance
+
+                        if stoppingDist >= cameraDist:
+                            print(f"[LEVEL 2 WARNING] Detected vehicle won't be able to stop in time: {stoppingDist:.2f} m > {cameraDist:.2f} m")
 
                 #TODO przkeorczenuie prędkosci 
 
                 plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters)
-                dist  = matchClustersToCars(carsDict, clusterCenters, frameIndex)
-                print(dist)
                 
             results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
             annotatedFrame = frame.copy()
