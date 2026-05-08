@@ -4,21 +4,13 @@ and returns weather in selected place and selected time
 
 """
 import requests
-from enum import Enum
-#from typing import Tuple
 from datetime import date
 
-class Weather(Enum):
-    DRY = "dry"
-    RAIN = "rain"
-    SNOW = "snow"
-    ICE = "ice"
-
 ROAD_CONDITION_MULTIPLIER={
-    Weather.DRY:  1,
-    Weather.RAIN: 1.7,
-    Weather.SNOW: 3,
-    Weather.ICE: 4,
+    "dry":    1,
+    "rain":   1.7,
+    "snow":   3,
+    "ice":    4,
 
 }
 
@@ -47,7 +39,7 @@ def getWeather(lat, lon, targetDate, time):
         response.raise_for_status()
         data = response.json()
 
-        weatherCodes = data["weather"]["weathercode"]
+        weatherCodes = data["hourly"]["weathercode"]
         temperatures = data["hourly"]["temperature_2m"]
 
         weatherCode = weatherCodes[time]
@@ -56,24 +48,25 @@ def getWeather(lat, lon, targetDate, time):
         condition = code_to_weather(weatherCode, temperature)
         description = f"WMO code={weatherCode}, temp={temperature:.1f}°C"
 
-        return condition, description
+        print(ROAD_CONDITION_MULTIPLIER[condition])
+        return ROAD_CONDITION_MULTIPLIER[condition]
 
     except Exception as e:
         print("error getting weather, fallback to DRY")
-        return Weather.DRY, "default"
+        return ROAD_CONDITION_MULTIPLIER["dry"]
 
 
 def code_to_weather(code, temp):
     #snow
     if code in (71, 73, 75, 77, 85, 86):
-        return Weather.SNOW
+        return "snow"
     #Ice
     elif code in (56, 57, 66, 67):
-        return Weather.ICE
+        return "ice"
     #rain or if below 2deg - ice
     elif code in (51, 53, 55, 61, 63, 65, 80, 81, 82):
         if temp <= 2.0:
-            return Weather.ICE
-        return Weather.RAIN
+            return "ice"
+        return "rain"
     else:
-        return Weather.DRY
+        return "dry"

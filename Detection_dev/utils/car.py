@@ -3,9 +3,12 @@ import cv2
 import numpy as np
 from .radar import Radar
 from typing import Dict, List, Tuple, Any, Final, Union, Callable
-
+from .weather import getWeather
 # from ..algorithms.model_training.vehicle_classification_CNN.dataset import mass_factor
+from datetime import date
 
+TODAY = date.today()
+WEATHER_MARKIPLIER = getWeather(54.37163,18.61898, TODAY, 12)
 IMAGE_WIDTH: Final[int] = 128
 IMAGE_HEIGHT: Final[int] = 128
 IMG_SIZE: Final[Tuple[int, int]] = (IMAGE_WIDTH, IMAGE_HEIGHT)
@@ -215,7 +218,7 @@ class Car:
             breaking_approx = 6.444e-6
 
         self.mass = float(mass)
-        distance = float(breaking_approx * mass * (self.velo[-1].v ** 2)) #no velocity detection so constant used instead:
+        distance = float(breaking_approx * mass * (self.velo[-1].v ** 2)*WEATHER_MARKIPLIER) #no velocity detection so constant used instead:
         #distance = float(breaking_approx * mass * (50.0 ** 2))
         self.breakingDistance = distance
         self.stoppingDistance.append(stoppingDistance(distance=distance, mass=float(mass),car_category=car_category))
