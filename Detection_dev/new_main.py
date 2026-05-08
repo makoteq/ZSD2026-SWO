@@ -77,8 +77,8 @@ SPEED_LIMIT: Final[float] = SPEED_LIMIT_KMH / 3.6
 RADAR_STEP_INTERVAL = 10
 MASK_Z_MIN = 30.0
 MASK_Z_MAX = 100.0
-MASK_Y_MIN = 75
-MASK_Y_MAX = 130.0
+MASK_Y_MIN = 0.0
+MASK_Y_MAX = 120.0
 
 
 WINDOW_NAME = "Traffic Analysis"
@@ -150,27 +150,27 @@ if __name__ == "__main__":
                 radar.clusterPoints()
                 # radar.visualizeClusteredStep()
                 clusterCenters = radar.getClusterCenters()
-
                 dist, carMap = matchClustersToCars(carsDict, clusterCenters, frameIndex)
-                print(dist)
 
                 for clusterId, cluster in enumerate(clusterCenters):
-                    currentVelocity: float = abs(cluster['radial_velocity'])
+                    currentDistance: float = abs(cluster['y_corrected'])
                     carId = carMap.get(clusterId)
-
+                    ##TODO dodać obliczanie czy wychamuj na podstawie drogi hamowania jesli nie wychamuje to 2 stopeń alarmu
+                    print(f"Distance: {currentDistance:.2f} m")
+                    currentVelocity: float = abs(cluster['radial_velocity'])
                     if currentVelocity > SPEED_LIMIT:
                         print(f"[WARNING] Speed limit exceeded by cluster: {currentVelocity:.2f} m/s")
                     elif carId is not None and carId in carsDict:
                         car = carsDict[carId]
                         stoppingDist = car.stoppingDistance[-1].distance
-                        cameraDist = car.cameraDistance
 
-                        if stoppingDist >= cameraDist:
-                            print(f"[LEVEL 2 WARNING] Detected vehicle won't be able to stop in time: {stoppingDist:.2f} m > {cameraDist:.2f} m")
+                        if stoppingDist >= currentDistance:
+                            print(f"[LEVEL 2 WARNING] Detected vehicle won't be able to stop in time: {stoppingDist:.2f} m > {currentDistance:.2f} m")
 
                 #TODO przkeorczenuie prędkosci 
 
                 plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters)
+                print(dist)
                 
             results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
             annotatedFrame = frame.copy()
