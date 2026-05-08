@@ -14,7 +14,7 @@ class Weather(Enum):
     SNOW = "snow"
     ICE = "ice"
 
-ROAD_CONDITION_MULTIPLAYER={
+ROAD_CONDITION_MULTIPLIER={
     Weather.DRY:  1,
     Weather.RAIN: 1.7,
     Weather.SNOW: 3,
@@ -60,7 +60,7 @@ def getWeather(lat, lon, targetDate, time):
 
     except Exception as e:
         print("error getting weather, fallback to DRY")
-        return Weather.DRY, "deafult"
+        return Weather.DRY, "default"
 
 
 def code_to_weather(code, temp):
