@@ -1,21 +1,7 @@
-320_best_benchmark.csv
-320_best_frame.jpg
-480_best_benchmark.csv
-480_best_frame.jpg
-YOLObenchmarks/_best_last_frame.jpg
-sahi_metrics_output.csv
-sahi_ostatnia_klatka.jpg
-wynik_reczny.jpg
-stat_yolo26/performance_log.txt
-benchmark_roi_sahi.py
 bytetrack_custom.yaml
-dataset.yaml
-detectfromphoto.py
 environment.yaml
-filmtodata.py
-setup.sh
+benchmark_roi_sahi.py
 
-dataset/
 milestone/
 misc/
 depth/
@@ -26,7 +12,6 @@ YOLObenchmarks/CARLA_test3/
 YOLObenchmarks/Sahi_roi/
 YOLObenchmarks/clear_model_best/
 
-YOLOmodels/
 .venv/
 .python-version
 *.tflite
@@ -36,4 +21,3 @@ __pycache__/
 *$py.class
 .DS_Store
 
-../runs/
