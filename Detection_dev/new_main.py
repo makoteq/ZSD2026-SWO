@@ -151,16 +151,6 @@ if __name__ == "__main__":
 
                 print("Detected lines:", detected_lines)
 
-                ## TODO dodać wykrywanie linii, dynamiczne
-                # detected_lines = getManualLaneLines(VIDEO_PATH)
-                # detected_lines = [{'m': -0.6904761904761905, 'b': 877.8333333333334, 'x_bot': -447.8809523809524, 'abs_m': 0.6904761904761905}, {'m': 0.5178041543026706, 'b': 289.2655786350149, 'x_bot': 1283.4495548961424, 'abs_m': 0.5178041543026706}]
-                # y=0
-                # xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
-                # xRight = (detected_lines[1]['m'] * y) + detected_lines[1]['b']
-                # road_width_h0_px = abs(xRight - xLeft)
-
-
-
             if frameIndex % RADAR_STEP_INTERVAL == 0:
                 radar_setp = frame_time * RADAR_STEP_INTERVAL
                 radar.step(radar_setp)
