@@ -69,6 +69,7 @@ def matchClustersToCars(carsDict: Dict[int, Any], clusterCenters: List[Dict[str,
     usedCars: set[int] = set()
     usedClusters: set[int] = set()
     lastDist: float = 0.0
+    carMap: Dict[int, int] = {}
 
     for dist, carId, clusterIdx in allDistances:
         if carId in usedCars or clusterIdx in usedClusters:
@@ -94,8 +95,9 @@ def matchClustersToCars(carsDict: Dict[int, Any], clusterCenters: List[Dict[str,
         usedCars.add(carId)
         usedClusters.add(clusterIdx)
         lastDist = dist
+        carMap[clusterIdx] = carId
 
-    return lastDist
+    return lastDist, carMap
         
 import cv2
 import numpy as np
