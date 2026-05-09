@@ -1,4 +1,5 @@
 import os
+import json
 import torch
 import cv2
 import numpy as np
@@ -9,7 +10,7 @@ from tqdm import tqdm
 from typing import Final, List
 
 # Importy lokalne
-from algorithms.lane_detection_brute.lane_detection_brute import runLaneDetection
+from algorithms.lane_detection.lane_detector import LaneDetector
 from utils.points import build_lines_equations
 from utils.car import Car, stoppingDistance
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
@@ -48,6 +49,7 @@ OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
 DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth")
 DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
 DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
+LINES_JSON_PATH = os.path.join(DATA_DIR, SCENARIO, "lines.json")
 
 # yolo
 ROAD_WIDTH_METERS = 7.0
@@ -121,6 +123,7 @@ if __name__ == "__main__":
 
     carsDict: Dict[int, Car] = {}
     frameIndex = 0
+    detector = LaneDetector()
 
     try:
         while cap.isOpened():
@@ -132,15 +135,29 @@ if __name__ == "__main__":
             for carId in staleIds: del carsDict[carId]
             
             if frameIndex == 0:
+                if os.path.exists(LINES_JSON_PATH):
+                    with open(LINES_JSON_PATH, 'r') as f:
+                        lines_dick = json.load(f)
+                else:
+                    lines_dick = detector.detect(frame)
+                    with open(LINES_JSON_PATH, 'w') as f:
+                        json.dump(lines_dick, f, indent=4)
 
+                xLeft = lines_dick["left_line"]["start"][0]
+                xRight = lines_dick["right_line"]["start"][0]
+                road_width_h0_px = abs(xRight - xLeft)
+
+                detected_lines = [lines_dick["left_line"], lines_dick["right_line"], lines_dick["middle_line"]]
+
+                print("Detected lines:", detected_lines)
 
                 ## TODO dodać wykrywanie linii, dynamiczne
                 # detected_lines = getManualLaneLines(VIDEO_PATH)
-                detected_lines = [{'m': -0.6904761904761905, 'b': 877.8333333333334, 'x_bot': -447.8809523809524, 'abs_m': 0.6904761904761905}, {'m': 0.5178041543026706, 'b': 289.2655786350149, 'x_bot': 1283.4495548961424, 'abs_m': 0.5178041543026706}]
-                y=0
-                xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
-                xRight = (detected_lines[1]['m'] * y) + detected_lines[1]['b']
-                road_width_h0_px = abs(xRight - xLeft)
+                # detected_lines = [{'m': -0.6904761904761905, 'b': 877.8333333333334, 'x_bot': -447.8809523809524, 'abs_m': 0.6904761904761905}, {'m': 0.5178041543026706, 'b': 289.2655786350149, 'x_bot': 1283.4495548961424, 'abs_m': 0.5178041543026706}]
+                # y=0
+                # xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
+                # xRight = (detected_lines[1]['m'] * y) + detected_lines[1]['b']
+                # road_width_h0_px = abs(xRight - xLeft)
 
 
 
@@ -167,6 +184,7 @@ if __name__ == "__main__":
                 
             results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
             annotatedFrame = frame.copy()
+            annotatedFrame = detector.draw_lines(annotatedFrame, lines_dick)
 
 
 

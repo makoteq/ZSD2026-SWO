@@ -4,18 +4,18 @@ import numpy as np
 class LaneDetector:
     def __init__(self, config=None):
         self.config = {
-            'yolo_conf': 0.25, # Minimal confidence for YOLO detections
-            'crop_top': 0.3,  # Percentage of the image height to crop from the top (to focus on the road)
-            'adapt_block_size': 81, # Must be odd and >1 for adaptive thresholding
-            'adapt_c': -15, # Constant subtracted from the mean or weighted mean in adaptive thresholding
-            'hough_threshold_percentage': 0.09, # of the image diagonal,
-            'hough_min_length_percentage': 0.2, # of the image diagonal,
-            'hough_max_gap_percentage': 0.05, # of the image diagonal,
-            'hough_threshold': 0,  # To be calculated based on image diagonal
-            'hough_min_length': 0, # To be calculated based on image diagonal
-            'hough_max_gap': 0,    # To be calculated based on image diagonal
-            'vp_tolerance_percentage': 0.2, # of the image diagonal, for vanishing point consistency check
-            'vp_tolerance': 0 # To be calculated based on image diagonal
+            'yolo_conf': 0.25,
+            'crop_top': 0.3,
+            'adapt_block_size': 81,
+            'adapt_c': -15,
+            'hough_threshold_percentage': 0.09,
+            'hough_min_length_percentage': 0.2,
+            'hough_max_gap_percentage': 0.05,
+            'hough_threshold': 0,
+            'hough_min_length': 0,
+            'hough_max_gap': 0,
+            'vp_tolerance_percentage': 0.2,
+            'vp_tolerance': 0
         }
         if config:
             self.config.update(config)
@@ -34,7 +34,6 @@ class LaneDetector:
         crop_h = int(h * self.config['crop_top'])
         res = image[crop_h:, :]
         return res
-
 
     def get_adaptive_mask(self, img):
         height, width = img.shape[:2]
@@ -95,12 +94,9 @@ class LaneDetector:
                 if dy < dx * 0.5:
                     continue
 
-
                 cv2.line(stencil_mask, (x1, y1), (x2, y2), 255, 5)
 
-
         original_pixels_kept = cv2.bitwise_and(raw_mask, stencil_mask)
-
 
         kernel_dilate = np.ones((5, 5), np.uint8)
         final_mask = cv2.dilate(original_pixels_kept, kernel_dilate, iterations=1)
@@ -270,45 +266,41 @@ class LaneDetector:
         else:
             return 'dashed'
 
-    def transform_to_classical(self, lines, original_height):
-        classical_lines = []
+    def format_full_image_lines(self, lines, original_height):
+        formatted_lines = []
         crop_h = int(original_height * self.config['crop_top'])
 
         for line in lines:
-            m_inv = line['m']
-            b_inv_crop = line['b']
+            m = line['m']
+            b_crop = line['b']
 
-            b_inv_orig = b_inv_crop - (m_inv * crop_h)
+            b_full = b_crop - (m * crop_h)
 
-            m_safe = m_inv if abs(m_inv) > 1e-5 else 1e-5
+            y_start = original_height
+            x_start = int(m * y_start + b_full)
 
-            a = 1.0 / m_safe
-            b = -b_inv_orig / m_safe
+            y_end = crop_h
+            x_end = int(m * y_end + b_full)
 
-            classical_lines.append({
-                'a': a,
-                'b': b,
-                'weight': line.get('weight', 0),
-                'type': line.get('type', 'solid')
+            formatted_lines.append({
+                'm': float(m),
+                'b': float(b_full),
+                'start': [int(x_start), int(y_start)],
+                'end': [int(x_end), int(y_end)],
+                'type': str(line.get('type', 'solid'))
             })
 
-        return classical_lines
+        return formatted_lines
 
-    def draw_lines(self, original_img, classical_lines):
+    def draw_lines(self, original_img, lines_dict):
         result_img = original_img.copy()
-        h_orig = original_img.shape[0]
 
-        crop_h = int(h_orig * self.config['crop_top'])
+        for key, line in lines_dict.items():
+            if not isinstance(line, dict) or 'start' not in line:
+                continue
 
-        for line in classical_lines:
-            a = line['a']
-            b = line['b']
-
-            y1_orig = h_orig
-            x1 = int((y1_orig - b) / a)
-
-            y2_orig = crop_h
-            x2 = int((y2_orig - b) / a)
+            pt1 = tuple(line['start'])
+            pt2 = tuple(line['end'])
 
             if line.get('type') == 'dashed':
                 color = (0, 0, 255)
@@ -316,8 +308,7 @@ class LaneDetector:
                 color = (0, 255, 0)
 
             thickness = 4
-
-            cv2.line(result_img, (x1, y1_orig), (x2, y2_orig), color, thickness)
+            cv2.line(result_img, pt1, pt2, color, thickness)
 
         return result_img
 
@@ -330,5 +321,17 @@ class LaneDetector:
         for line in math_lines:
             line['type'] = self.classify_line_type(line, mask)
 
-        final_lines = self.transform_to_classical(math_lines, image.shape[0])
-        return final_lines
+        final_lines = self.format_full_image_lines(math_lines, image.shape[0])
+
+        final_lines.sort(key=lambda l: l['start'][0])
+
+        categorized_lines = {}
+        if len(final_lines) == 3:
+            categorized_lines['left_line'] = final_lines[0]
+            categorized_lines['middle_line'] = final_lines[1]
+            categorized_lines['right_line'] = final_lines[2]
+        elif len(final_lines) >= 2:
+            categorized_lines['left_line'] = final_lines[0]
+            categorized_lines['right_line'] = final_lines[-1]
+
+        return categorized_lines
