@@ -10,9 +10,19 @@ Python 3.6 to 3.9
 Google Coral on USB 3.0 port
 ```
 ## Exporting model
-To run the model on the Google Coral TPU, you must first convert the standard PyTorch weights (.pt) into a compatible Edge TPU format. This process should be performed on a Linux-based system or via WSL for compatibility with compiler tools.
+To run the model on the Google Coral TPU, you must first convert the standard PyTorch weights (.pt) into a compatible Edge TPU format. This process should be performed on a Linux-based system or via Google Colab for compatibility with compiler tools.
 ```bash
-yolo export model=path/to/model.pt format=edgetpu # Export an official model or custom model
+!curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+!echo "deb https://packages.cloud.google.com/apt coral-edgetpu-stable main" | sudo tee /etc/apt/sources.list.d/coral-edgetpu.list
+!sudo apt-get update
+!sudo apt-get install edgetpu-compiler
+!pip install ultralytics
+from ultralytics import YOLO
+model = YOLO('path/to/model.pt')
+results = model.export(
+    format='edgetpu',
+    imgsz=416,          #specify the image size 
+)
 ```
 
 ## Setup
@@ -28,11 +38,9 @@ pip install -U ultralytics[export]
 # Installing the Edge TPU runtime
 sudo dpkg -i libedgetpu1-std_16.0tf2.19.1-1.bookworm_arm64.deb
 
-# Install dependencies
-pip install tensorflow 
-pip install -U tflite-runtime
-pip install torch==2.3.1
-pip install torchvision==0.18.1
+# Run the environment instalation script 
+chmod +x env_setup.sh
+./env_setup.sh
 
 
 ```
