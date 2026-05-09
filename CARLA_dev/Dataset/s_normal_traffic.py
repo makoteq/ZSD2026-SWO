@@ -17,9 +17,9 @@ MIN_SPEED_KMH = 30.0
 MAX_SPEED_KMH = 50.0
 
 # Gap configuration
-SPAWN_DELAY_MIN = 2.0
-SPAWN_DELAY_MAX = 3.5
-MIN_GAP_SAME_LANE_M = 15.0
+SPAWN_DELAY_MIN = 4.5
+SPAWN_DELAY_MAX = 7.5
+MIN_GAP_SAME_LANE_M = 30.0
 SAFE_DISTANCE_M = 12.0  # Distance at which the car starts braking
 
 
