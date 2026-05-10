@@ -5,12 +5,12 @@ class LaneDetector:
     def __init__(self, config=None):
         self.config = {
             'yolo_conf': 0.25,
-            'crop_top': 0.3,
+            'crop_top': 0.1,
             'adapt_block_size': 81,
             'adapt_c': -15,
             'hough_threshold_percentage': 0.09,
             'hough_min_length_percentage': 0.2,
-            'hough_max_gap_percentage': 0.05,
+            'hough_max_gap_percentage': 0.07,
             'hough_threshold': 0,
             'hough_min_length': 0,
             'hough_max_gap': 0,
@@ -73,6 +73,7 @@ class LaneDetector:
         combined_paint_mask = cv2.bitwise_or(white_mask, yellow_mask)
         raw_mask = cv2.bitwise_or(combined_paint_mask, pure_white_mask)
 
+
         stencil_mask = np.zeros_like(raw_mask)
 
         lines = cv2.HoughLinesP(
@@ -100,6 +101,7 @@ class LaneDetector:
 
         kernel_dilate = np.ones((5, 5), np.uint8)
         final_mask = cv2.dilate(original_pixels_kept, kernel_dilate, iterations=1)
+
 
         return final_mask
 
