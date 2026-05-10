@@ -11,24 +11,26 @@ from typing import Final, List
 # Importy lokalne
 from algorithms.lane_detection_brute.lane_detection_brute import runLaneDetection
 from utils.points import build_lines_equations
-from utils.car import Car, stoppingDistance
+from utils.car import Car
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
 from utils.depth_v2 import DepthV2
-from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, plotYOffsetCorrelation
+from datetime import date
+from utils.weather import calcStoppingDistance, getWeather
+from utils.utils import drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, \
+    plotYOffsetCorrelation
 import matplotlib.pyplot as plt
 
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 SCENARIO = "output"
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/test/test.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
+
 # Control
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.mp4")
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
 
 # Speeding
-# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/rgb.mp4")
-# RADAR_CSV_PATH = os.path.join(DATA_DIR, "alarm/speeding1/radar_points_world.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/21_speeding.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/21_speeding.csv")
 
 # overtaking
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.mp4")
@@ -106,6 +108,12 @@ if __name__ == "__main__":
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     print(f"FPS: {fps}")
+
+    lat = 54.37163
+    lon = 18.61898
+    Weather = getWeather(lat, lon, date.today(), 12)
+    print(f"{lat,lon}\nDate: {date.today()}, Weather conditions: {Weather.condition} \n{Weather.description}")
+
     frame_time = 1.0 / fps
     cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
     frameWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -154,10 +162,13 @@ if __name__ == "__main__":
 
                 for cluster in clusterCenters:
                     currentDistance: float = abs(cluster['y_corrected'])
-                    ##TODO dodać obliczanie czy wychamuj na podstawie drogi hamowania jesli nie wychamuje to 2 stopeń alarmu
-                    print(f"Distance: {currentDistance:.2f} m")
                     currentVelocity: float = abs(cluster['radial_velocity'])
-                    if currentVelocity > SPEED_LIMIT:
+                    stoppingDistance: float = abs(calcStoppingDistance(currentVelocity))
+                    print(f"Distance: {currentDistance:.2f} m")
+
+                    if stoppingDistance >= currentDistance:
+                        print(f"[LEVEL 2 WARNING] Detected vehicle won't be able to stop in time: {stoppingDistance:.2f} m > {currentDistance:.2f} m")
+                    elif currentVelocity > SPEED_LIMIT:
                         print(f"[WARNING] Speed limit exceeded by cluster: {currentVelocity:.2f} m/s")
 
                 #TODO przkeorczenuie prędkosci 
@@ -220,7 +231,7 @@ if __name__ == "__main__":
             frameIndex += 1
 
     except Exception as e:
-        print(f"Błąd: {e}")
+        print(f"Error: {e}")
     finally:
         cap.release()
         out.release()

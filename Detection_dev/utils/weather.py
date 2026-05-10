@@ -5,14 +5,25 @@ and returns weather in selected place and selected time
 """
 import requests
 from datetime import date
+from dataclasses import dataclass
+
+TODAY = date.today()
 
 ROAD_CONDITION_MULTIPLIER={
-    "dry":    1.0,
+    "dry":    1,
     "rain":   1.7,
-    "snow":   3.0,
-    "ice":    4.0,
+    "snow":   3,
+    "ice":    4,
 
 }
+
+@dataclass
+class WeatherResult:
+    multiplier: float
+    condition: str
+    weatherCode: int
+    temperature: float
+    description: str
 
 def getWeather(lat, lon, targetDate, time):
 
@@ -48,12 +59,40 @@ def getWeather(lat, lon, targetDate, time):
         condition = code_to_weather(weatherCode, temperature)
         description = f"WMO code={weatherCode}, temp={temperature:.1f}°C"
 
-        print(ROAD_CONDITION_MULTIPLIER[condition])
-        return ROAD_CONDITION_MULTIPLIER[condition]
+        return WeatherResult(
+            multiplier=ROAD_CONDITION_MULTIPLIER[condition],
+            condition=condition,
+            weatherCode=weatherCode,
+            temperature=temperature,
+            description=description,
+        )
 
     except Exception as e:
         print("error getting weather, fallback to DRY")
-        return ROAD_CONDITION_MULTIPLIER["dry"]
+        return WeatherResult(
+            multiplier=ROAD_CONDITION_MULTIPLIER["dry"],
+            condition="dry",
+            weatherCode=-1,
+            temperature=0.0,
+            description="fallback: no data",
+        )
+
+def calcStoppingDistance(speed: float) -> float:
+    weatherMarkiplier = getWeather(54.37163, 18.61898, TODAY, 12).multiplier
+
+    if weatherMarkiplier == 1:
+        reaction_time = 1.5
+    elif weatherMarkiplier == 1.7 or weatherMarkiplier == 3:
+        reaction_time = 2.0
+    else:
+        reaction_time = 1.0
+
+    if speed <= 0:
+        speed = 50.0/3.6
+
+    breaking_distance = float(reaction_time * speed) +((speed/10)*3 + (speed/10)**2)*weatherMarkiplier
+
+    return float(breaking_distance)
 
 
 def code_to_weather(code, temp):
