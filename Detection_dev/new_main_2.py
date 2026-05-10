@@ -24,7 +24,7 @@ SCENARIO = "output"
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 
 # Control
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.mp4")
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/test/test.mp4")
 RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
 
 # Speeding
