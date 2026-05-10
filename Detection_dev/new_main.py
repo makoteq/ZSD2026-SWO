@@ -11,10 +11,13 @@ from typing import Final, List
 # Importy lokalne
 from algorithms.lane_detection_brute.lane_detection_brute import runLaneDetection
 from utils.points import build_lines_equations
-from utils.car import Car, stoppingDistance
+from utils.car import Car
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
 from utils.depth_v2 import DepthV2
-from utils.utils import  drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, plotYOffsetCorrelation
+from datetime import date
+from utils.weather import calcStoppingDistance, getWeather
+from utils.utils import drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, \
+    plotYOffsetCorrelation
 import matplotlib.pyplot as plt
 
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
@@ -26,12 +29,12 @@ DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
 
 # Speeding
-# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/rgb.mp4")
-# RADAR_CSV_PATH = os.path.join(DATA_DIR, "alarm/speeding1/radar_points_world.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/21_speeding.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/21_speeding.csv")
 
 # overtaking
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.csv")
+#VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.mp4")
+#RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.csv")
 
 # overtaking
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking2/video_day(4).mp4")
@@ -80,19 +83,18 @@ MASK_Z_MAX = 100.0
 MASK_Y_MIN = 0.0
 MASK_Y_MAX = 120.0
 
-
 WINDOW_NAME = "Traffic Analysis"
 WAIT_KEY_MS = 1
 EXIT_KEY = ord('q')
 
 if __name__ == "__main__":
-    
+
     # correctionFunc = plotYOffsetCorrelation(CSV_PATH)
 
     correctionFunc = lambda x: 0.0
     model = YOLO(YOLO_MODEL_PATH)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
+
     cap = cv2.VideoCapture(VIDEO_PATH)
     if not cap.isOpened():
         exit(1)
@@ -105,6 +107,12 @@ if __name__ == "__main__":
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     print(f"FPS: {fps}")
+
+    lat = 54.37163
+    lon = 18.61898
+    Weather = getWeather(lat, lon, date.today(), 12)
+    print(f"{lat,lon}\nDate: {date.today()}, Weather conditions: {Weather.condition} \n{Weather.description}")
+
     frame_time = 1.0 / fps
     cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
     frameWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -124,25 +132,24 @@ if __name__ == "__main__":
 
     try:
         while cap.isOpened():
-            
+
             success, frame = cap.read()
             if not success: break
 
             staleIds = [carId for carId, carObj in carsDict.items() if carObj.lastSeen < frameIndex - 5]
             for carId in staleIds: del carsDict[carId]
-            
+
             if frameIndex == 0:
-
-
                 ## TODO dodać wykrywanie linii, dynamiczne
                 # detected_lines = getManualLaneLines(VIDEO_PATH)
-                detected_lines = [{'m': -0.6904761904761905, 'b': 877.8333333333334, 'x_bot': -447.8809523809524, 'abs_m': 0.6904761904761905}, {'m': 0.5178041543026706, 'b': 289.2655786350149, 'x_bot': 1283.4495548961424, 'abs_m': 0.5178041543026706}]
-                y=0
+                detected_lines = [{'m': -0.6904761904761905, 'b': 877.8333333333334, 'x_bot': -447.8809523809524,
+                                   'abs_m': 0.6904761904761905},
+                                  {'m': 0.5178041543026706, 'b': 289.2655786350149, 'x_bot': 1283.4495548961424,
+                                   'abs_m': 0.5178041543026706}]
+                y = 0
                 xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
                 xRight = (detected_lines[1]['m'] * y) + detected_lines[1]['b']
                 road_width_h0_px = abs(xRight - xLeft)
-
-
 
             if frameIndex % RADAR_STEP_INTERVAL == 0:
                 radar_setp = frame_time * RADAR_STEP_INTERVAL
@@ -151,24 +158,27 @@ if __name__ == "__main__":
                 # radar.visualizeClusteredStep()
                 clusterCenters = radar.getClusterCenters()
 
-                for cluster in clusterCenters:
+                for clusterID, cluster in enumerate(clusterCenters):
                     currentDistance: float = abs(cluster['y_corrected'])
-                    ##TODO dodać obliczanie czy wychamuj na podstawie drogi hamowania jesli nie wychamuje to 2 stopeń alarmu
-                    print(f"Distance: {currentDistance:.2f} m")
                     currentVelocity: float = abs(cluster['radial_velocity'])
-                    if currentVelocity > SPEED_LIMIT:
+                    stoppingDistance: float = abs(calcStoppingDistance(currentVelocity))
+                    print(f"Distance: {currentDistance:.2f} m")
+
+                    if stoppingDistance >= currentDistance:
+                        print(f"[LEVEL 2 WARNING] Detected vehicle won't be able to stop in time: {stoppingDistance:.2f} m > {currentDistance:.2f} m")
+                    elif currentVelocity > SPEED_LIMIT:
                         print(f"[WARNING] Speed limit exceeded by cluster: {currentVelocity:.2f} m/s")
 
-                #TODO przkeorczenuie prędkosci 
+                # TODO przkeorczenuie prędkosci
 
                 plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters)
-                dist  = matchClustersToCars(carsDict, clusterCenters, frameIndex)
+                dist = matchClustersToCars(carsDict, clusterCenters, frameIndex)
                 print(dist)
-                
-            results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
+
+            results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD, persist=True, verbose=False,
+                                  device=0 if device == 'cuda' else 'cpu', tracker='bytetrack.yaml',
+                                  classes=ALLOWED_CLASSES_IDS)
             annotatedFrame = frame.copy()
-
-
 
             if results[0].boxes.id is not None:
                 boxesXyxy = results[0].boxes.xyxy.cpu().numpy()
@@ -196,33 +206,33 @@ if __name__ == "__main__":
                         correctionFunc
                     )
 
-                    drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.pos[-1].x, car.pos[-1].y,car.cameraDistance,
-                                  car.velo[-1].v, car.stoppingDistance[-1].distance,)
+                    drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.pos[-1].x, car.pos[-1].y,
+                                  car.cameraDistance,
+                                  car.velo[-1].v, 2)
 
                     save_car_to_csv(car, trackId, frameIndex, CSV_PATH)
 
                     points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
                     cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
 
-
                 ##TODO dodać algorytm wykrywania niebezpieczeństwa
 
             currentTime = START_TIME + (frameIndex * frame_time)
-            cv2.putText(annotatedFrame, f"Frame: {frameIndex}", (TEXT_POSITION_X, TEXT_POSITION_Y_START), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
-            cv2.putText(annotatedFrame, f"Time: {currentTime:.2f}s", (TEXT_POSITION_X, TEXT_POSITION_Y_START + TEXT_LINE_SPACING), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
+            cv2.putText(annotatedFrame, f"Frame: {frameIndex}", (TEXT_POSITION_X, TEXT_POSITION_Y_START),
+                        cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
+            cv2.putText(annotatedFrame, f"Time: {currentTime:.2f}s",
+                        (TEXT_POSITION_X, TEXT_POSITION_Y_START + TEXT_LINE_SPACING), cv2.FONT_HERSHEY_SIMPLEX,
+                        TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
 
             out.write(annotatedFrame)
             cv2.imshow(WINDOW_NAME, annotatedFrame)
             if cv2.waitKey(WAIT_KEY_MS) & 0xFF == EXIT_KEY: break
 
-
             frameIndex += 1
 
     except Exception as e:
-        print(f"Błąd: {e}")
+        print(f"Error: {e}")
     finally:
         cap.release()
         out.release()
         cv2.destroyAllWindows()
-
-
