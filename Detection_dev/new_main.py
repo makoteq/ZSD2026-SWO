@@ -1,5 +1,4 @@
 import os
-import json
 import torch
 import cv2
 import numpy as np
@@ -10,7 +9,7 @@ from tqdm import tqdm
 from typing import Final, List
 
 # Importy lokalne
-from algorithms.lane_detection.lane_detector import LaneDetector
+from algorithms.lane_detection_brute.lane_detection_brute import runLaneDetection
 from utils.points import build_lines_equations
 from utils.car import Car, stoppingDistance
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
@@ -23,24 +22,24 @@ SCENARIO = "output"
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 
 # Control
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
 
 # Speeding
-# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/speeding1/rgb.mp4")
-# CSV_PATH = os.path.join(DATA_DIR, "alarm/speeding1/radar_points_world.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/rgb.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "alarm/speeding1/radar_points_world.csv")
 
 # overtaking
-# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/rgb.mp4")
-# CSV_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/radar_points_world.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.csv")
 
 # overtaking
-# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/overtaking2/video_day(4).mp4")
-# CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking2/video_day(4).mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/normalTraffic_DistMarkers/radar_points_world.csv")
 
 # Lane departure
 # VIDEO_PATH = os.path.join(DATA_DIR, "alarm/trajectory_change1/rgb.mp4")
-# CSV_PATH = os.path.join(DATA_DIR, "normalTraffic_DistMarkers/radar_points_world.csv")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/normalTraffic_DistMarkers/radar_points_world.csv")
 
 
 CSV_PATH = os.path.join(DATA_DIR, SCENARIO, "car.csv")
@@ -49,7 +48,6 @@ OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
 DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth")
 DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
 DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
-LINES_JSON_PATH = os.path.join(DATA_DIR, SCENARIO, "lines.json")
 
 # yolo
 ROAD_WIDTH_METERS = 7.0
@@ -76,7 +74,7 @@ BOX_THICKNESS: Final[int] = 2
 SPEED_LIMIT_KMH: Final[float] = 60.0
 SPEED_LIMIT: Final[float] = SPEED_LIMIT_KMH / 3.6
 # radar
-RADAR_STEP_INTERVAL = 10
+RADAR_STEP_INTERVAL = 5
 MASK_Z_MIN = 30.0
 MASK_Z_MAX = 100.0
 MASK_Y_MIN = 0.0
@@ -123,7 +121,6 @@ if __name__ == "__main__":
 
     carsDict: Dict[int, Car] = {}
     frameIndex = 0
-    detector = LaneDetector()
 
     try:
         while cap.isOpened():
@@ -135,21 +132,17 @@ if __name__ == "__main__":
             for carId in staleIds: del carsDict[carId]
             
             if frameIndex == 0:
-                if os.path.exists(LINES_JSON_PATH):
-                    with open(LINES_JSON_PATH, 'r') as f:
-                        lines_dick = json.load(f)
-                else:
-                    lines_dick = detector.detect(frame)
-                    with open(LINES_JSON_PATH, 'w') as f:
-                        json.dump(lines_dick, f, indent=4)
 
-                xLeft = lines_dick["left_line"]["start"][0]
-                xRight = lines_dick["right_line"]["start"][0]
+
+                ## TODO dodać wykrywanie linii, dynamiczne
+                # detected_lines = getManualLaneLines(VIDEO_PATH)
+                detected_lines = [{'m': -0.6904761904761905, 'b': 877.8333333333334, 'x_bot': -447.8809523809524, 'abs_m': 0.6904761904761905}, {'m': 0.5178041543026706, 'b': 289.2655786350149, 'x_bot': 1283.4495548961424, 'abs_m': 0.5178041543026706}]
+                y=0
+                xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
+                xRight = (detected_lines[1]['m'] * y) + detected_lines[1]['b']
                 road_width_h0_px = abs(xRight - xLeft)
 
-                detected_lines = [lines_dick["left_line"], lines_dick["right_line"], lines_dick["middle_line"]]
 
-                print("Detected lines:", detected_lines)
 
             if frameIndex % RADAR_STEP_INTERVAL == 0:
                 radar_setp = frame_time * RADAR_STEP_INTERVAL
@@ -157,30 +150,23 @@ if __name__ == "__main__":
                 radar.clusterPoints()
                 # radar.visualizeClusteredStep()
                 clusterCenters = radar.getClusterCenters()
-                dist, carMap = matchClustersToCars(carsDict, clusterCenters, frameIndex)
 
-                for clusterId, cluster in enumerate(clusterCenters):
+                for cluster in clusterCenters:
                     currentDistance: float = abs(cluster['y_corrected'])
-                    carId = carMap.get(clusterId)
+                    ##TODO dodać obliczanie czy wychamuj na podstawie drogi hamowania jesli nie wychamuje to 2 stopeń alarmu
                     print(f"Distance: {currentDistance:.2f} m")
                     currentVelocity: float = abs(cluster['radial_velocity'])
                     if currentVelocity > SPEED_LIMIT:
                         print(f"[WARNING] Speed limit exceeded by cluster: {currentVelocity:.2f} m/s")
-                    elif carId is not None and carId in carsDict:
-                        car = carsDict[carId]
-                        stoppingDist = car.stoppingDistance[-1].distance
-
-                        if stoppingDist >= currentDistance:
-                            print(f"[LEVEL 2 WARNING] Detected vehicle won't be able to stop in time: {stoppingDist:.2f} m > {currentDistance:.2f} m")
 
                 #TODO przkeorczenuie prędkosci 
 
                 plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters)
+                dist  = matchClustersToCars(carsDict, clusterCenters, frameIndex)
                 print(dist)
                 
             results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
             annotatedFrame = frame.copy()
-            annotatedFrame = detector.draw_lines(annotatedFrame, lines_dick)
 
 
 
