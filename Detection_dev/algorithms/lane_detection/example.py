@@ -40,7 +40,7 @@ def main():
 
     for img in images:
         lanes = detector.detect(img)
-        res = detector.draw_on_original(img, lanes)
+        res = detector.draw_lines(img, lanes)
         show_image_with_trackbar("result", res)
 
     cv2.destroyAllWindows()
