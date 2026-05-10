@@ -20,7 +20,8 @@ import matplotlib.pyplot as plt
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 SCENARIO = "output"
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
-
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/test/test.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
 # Control
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.mp4")
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
@@ -30,8 +31,8 @@ DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "alarm/speeding1/radar_points_world.csv")
 
 # overtaking
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.csv")
 
 # overtaking
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking2/video_day(4).mp4")
@@ -135,8 +136,8 @@ if __name__ == "__main__":
 
 
                 ## TODO dodać wykrywanie linii, dynamiczne
-                # detected_lines = getManualLaneLines(VIDEO_PATH)
-                detected_lines = [{'m': -0.6904761904761905, 'b': 877.8333333333334, 'x_bot': -447.8809523809524, 'abs_m': 0.6904761904761905}, {'m': 0.5178041543026706, 'b': 289.2655786350149, 'x_bot': 1283.4495548961424, 'abs_m': 0.5178041543026706}]
+                detected_lines = getManualLaneLines(VIDEO_PATH)
+                # detected_lines = [{'m': -0.6904761904761905, 'b': 877.8333333333334, 'x_bot': -447.8809523809524, 'abs_m': 0.6904761904761905}, {'m': 0.5178041543026706, 'b': 289.2655786350149, 'x_bot': 1283.4495548961424, 'abs_m': 0.5178041543026706}]
                 y=0
                 xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
                 xRight = (detected_lines[1]['m'] * y) + detected_lines[1]['b']
