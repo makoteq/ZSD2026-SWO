@@ -123,7 +123,7 @@ def getManualLaneLines(videoPath: str) -> List[Dict[str, float]]:
             cv2.circle(displayFrame, (x, y), 5, (0, 0, 255), -1)
             cv2.imshow(windowName, displayFrame)
 
-    cv2.namedWindow(windowName)
+    cv2.namedWindow(windowName, cv2.WINDOW_AUTOSIZE)
     cv2.setMouseCallback(windowName, mouseHandler)
     cv2.imshow(windowName, displayFrame)
 

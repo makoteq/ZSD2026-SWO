@@ -55,8 +55,11 @@ DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
 # yolo
 ROAD_WIDTH_METERS = 7.0
 FOV = 14.0
+ACTUAL_OFFSET= 0.0
 
 START_TIME = 0.0
+# TODO ADD radar delay by taking timestamp of the first record from csv
+RADAR_DELAY = 0.0
 CONF_THRESHOLD = 0.8
 IMGSZ = 800
 ALLOWED_CLASSES_IDS = [0]
@@ -100,7 +103,7 @@ if __name__ == "__main__":
     if not cap.isOpened():
         exit(1)
 
-    radar: Radar = Radar(RADAR_CSV_PATH, START_TIME)
+    radar: Radar = Radar(RADAR_CSV_PATH, START_TIME + RADAR_DELAY)
     radar.applyMask(MASK_Z_MIN, MASK_Z_MAX, MASK_Y_MIN, MASK_Y_MAX)
     radar.addNoise()
     radar.findLane()
