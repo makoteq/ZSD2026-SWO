@@ -165,7 +165,8 @@ class Car:
         if pixelWidthAtY == 0:
             return 0.0
 
-        distance = (roadWidthMeters * roadWidthH0Px) * self.fov / pixelWidthAtY
+        D_0 = 8.5 
+        distance = D_0 * (roadWidthH0Px / pixelWidthAtY)
         return float(distance)
 
     def getSize(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:

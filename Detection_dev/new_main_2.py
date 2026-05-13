@@ -8,6 +8,7 @@ from typing import Dict, Final
 from pathlib import Path
 from tqdm import tqdm
 from typing import Final, List
+import itertools
 
 # Importy lokalne
 from algorithms.lane_detection.lane_detector import LaneDetector
@@ -24,8 +25,8 @@ SCENARIO = "output"
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 
 # Control
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/test/test.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/wyprzedzanie/wyprzedzanie1.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/wyprzedzanie/wyprzedzanie1.csv")
 
 # Speeding
 # VIDEO_PATH = os.path.join(DATA_DIR, "alarm/speeding1/rgb.mp4")
@@ -86,6 +87,13 @@ MASK_Y_MAX = 120.0
 WINDOW_NAME = "Traffic Analysis"
 WAIT_KEY_MS = 1
 EXIT_KEY = ord('q')
+
+WATCHDOG_ZONE_MIN = 20.0
+WATCHDOG_ZONE_MAX = 60.0
+OVERTAKING_MARGIN = 0.0
+
+tracked_pairs = {}
+overtaking_events = []
 
 if __name__ == "__main__":
 
@@ -240,7 +248,56 @@ if __name__ == "__main__":
                     points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
                     cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
 
-                ##TODO dodać algorytm wykrywania niebezpieczeństwa
+                # overtake WATCHDOG
+                cars_in_zone = []
+                for car_id, car in carsDict.items():
+                    if car.cameraDistance is not None and WATCHDOG_ZONE_MIN <= car.cameraDistance <= WATCHDOG_ZONE_MAX:
+                        cars_in_zone.append(car)
+
+                current_zone_ids = {car.trackId for car in cars_in_zone}
+
+                for car1, car2 in itertools.combinations(cars_in_zone, 2):
+                    # Sort IDs to ensure consistent ordering of pairs
+                    id_pair = tuple(sorted((car1.trackId, car2.trackId)))
+                    dist1 = car1.cameraDistance
+                    dist2 = car2.cameraDistance
+
+                    # Establish leader and follower based on distance
+                    current_leader = car1.trackId if dist1 > dist2 else car2.trackId
+                    current_follower = car2.trackId if dist1 > dist2 else car1.trackId
+                    distance_diff = abs(dist1 - dist2)
+
+                    if id_pair not in tracked_pairs:
+                        # Register the pair for the first time if they are close enough
+                        if distance_diff > OVERTAKING_MARGIN:
+                            tracked_pairs[id_pair] = current_leader
+                    else:
+                        previous_leader = tracked_pairs[id_pair]
+
+                        # Detect overtaking if the leader has changed and they are sufficiently apart
+                        if previous_leader != current_leader and distance_diff > OVERTAKING_MARGIN:
+                            msg = f"WYPRZEDZANIE: {current_leader} wyprzedzil {current_follower}"
+                            print(f"[WATCHDOG] {msg}")
+                            # Add event to display for a few frames
+                            overtaking_events.append({'msg': msg, 'frames': int(fps * 2)})
+                            
+                            # Update the tracked leader for this pair
+                            tracked_pairs[id_pair] = current_leader
+
+                # Remove pairs that are no longer in the zone
+                tracked_pairs = {pair: leader for pair, leader in tracked_pairs.items() 
+                                 if pair[0] in current_zone_ids and pair[1] in current_zone_ids}
+
+                # Draw overtaking events
+                y_offset = TEXT_POSITION_Y_START + 3 * TEXT_LINE_SPACING
+                for event in overtaking_events[:]:
+                    cv2.putText(annotatedFrame, event['msg'], (TEXT_POSITION_X, y_offset),
+                                cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, (0, 0, 255), TEXT_THICKNESS)
+                    y_offset += TEXT_LINE_SPACING
+                    event['frames'] -= 1
+                    if event['frames'] <= 0:
+                        overtaking_events.remove(event)
+                
 
             currentTime = START_TIME + (frameIndex * frame_time)
             cv2.putText(annotatedFrame, f"Frame: {frameIndex}", (TEXT_POSITION_X, TEXT_POSITION_Y_START),
