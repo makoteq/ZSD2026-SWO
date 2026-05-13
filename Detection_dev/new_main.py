@@ -29,8 +29,8 @@ DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
 
 # Speeding
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/21_speeding.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/21_speeding.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/21_speeding.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/21_speeding.csv")
 
 # overtaking
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.mp4")
@@ -43,7 +43,9 @@ RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/21_speeding.csv")
 # Lane departure
 # VIDEO_PATH = os.path.join(DATA_DIR, "alarm/trajectory_change1/rgb.mp4")
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/normalTraffic_DistMarkers/radar_points_world.csv")
-
+# Test
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/test/test6.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/test/test6.csv")
 
 CSV_PATH = os.path.join(DATA_DIR, SCENARIO, "car.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
@@ -54,11 +56,10 @@ DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
 
 # yolo
 ROAD_WIDTH_METERS = 7.0
-FOV = 14.0
+FOV = 20.0
 ACTUAL_OFFSET= 0.0
 
 START_TIME = 0.0
-# TODO ADD radar delay by taking timestamp of the first record from csv
 RADAR_DELAY = 0.0
 CONF_THRESHOLD = 0.8
 IMGSZ = 800
@@ -99,10 +100,14 @@ if __name__ == "__main__":
     model = YOLO(YOLO_MODEL_PATH)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
+    with open(RADAR_CSV_PATH, 'r') as f:
+        f.readline()  
+        first_line = f.readline().split(',')
+        RADAR_DELAY = float(first_line[0])
     cap = cv2.VideoCapture(VIDEO_PATH)
     if not cap.isOpened():
         exit(1)
-
+    print(f"Radar delay: {RADAR_DELAY}")
     radar: Radar = Radar(RADAR_CSV_PATH, START_TIME + RADAR_DELAY)
     radar.applyMask(MASK_Z_MIN, MASK_Z_MAX, MASK_Y_MIN, MASK_Y_MAX)
     radar.addNoise()
