@@ -312,3 +312,27 @@ def save_car_to_csv(car, trackId, frameIndex, csv_file="cars_data.csv"):
 #         LANE_LINE_COLOR,
 #         LANE_LINE_THICKNESS,
 #     )
+
+
+def detectOvertaking(prevRanking: List[int], currentRanking: List[int],) -> List[Tuple[int, int]]:
+   # return list of tuples (overtaker_id, overtaken_id) for cars that changed order between prevRanking and currentRanking
+    if len(prevRanking) < 2 or len(currentRanking) < 2:
+        return []
+
+    commonCars = [cid for cid in currentRanking if cid in set(prevRanking)]
+    if len(commonCars) < 2:
+        return []
+
+    prevPos = {cid: i for i, cid in enumerate(prevRanking)}
+    currPos = {cid: i for i, cid in enumerate(currentRanking)}
+
+    overtakes = []
+    for i in range(len(commonCars)):
+        for j in range(i + 1, len(commonCars)):
+            a, b = commonCars[i], commonCars[j]
+            if (prevPos[a] < prevPos[b]) != (currPos[a] < currPos[b]):
+                overtaker = a if currPos[a] < currPos[b] else b
+                overtaken = b if overtaker == a else a
+                overtakes.append((overtaker, overtaken))
+
+    return overtakes
