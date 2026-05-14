@@ -8,9 +8,9 @@ class LaneDetector:
             'crop_top': 0.1,
             'adapt_block_size': 81,
             'adapt_c': -15,
-            'hough_threshold_percentage': 0.09,
-            'hough_min_length_percentage': 0.2,
-            'hough_max_gap_percentage': 0.07,
+            'hough_threshold_percentage': 0.15,
+            'hough_min_length_percentage': 0.20,
+            'hough_max_gap_percentage': 0.1,
             'hough_threshold': 0,
             'hough_min_length': 0,
             'hough_max_gap': 0,
@@ -101,7 +101,7 @@ class LaneDetector:
 
         kernel_dilate = np.ones((5, 5), np.uint8)
         final_mask = cv2.dilate(original_pixels_kept, kernel_dilate, iterations=1)
-
+        cv2.imshow('final_mask', final_mask)
 
         return final_mask
 
