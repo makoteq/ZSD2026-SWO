@@ -4,7 +4,7 @@ import torch
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from typing import Dict, Final
+from typing import Dict, Final, Tuple
 from pathlib import Path
 from tqdm import tqdm
 from typing import Final, List
@@ -15,8 +15,8 @@ from algorithms.lane_detection.lane_detector import LaneDetector
 from utils.points import build_lines_equations
 from utils.car import Car, stoppingDistance
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
-from utils.depth_v2 import DepthV2
-from utils.utils import drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, \
+from utils.depth_v2 import DepthV2, loadOrComputeDepthMap, rankCarsByDepth, flattenRowsMedianBackground, saveDepthVisualization
+from utils.utils import detectOvertaking, drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, \
     plotYOffsetCorrelation
 import matplotlib.pyplot as plt
 
@@ -32,9 +32,9 @@ RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/wyprzedzanie/wyprzedzanie1.csv"
 # VIDEO_PATH = os.path.join(DATA_DIR, "alarm/speeding1/rgb.mp4")
 # CSV_PATH = os.path.join(DATA_DIR, "alarm/speeding1/radar_points_world.csv")
 
-# overtaking
-# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/rgb.mp4")
-# CSV_PATH = os.path.join(DATA_DIR, "alarm/overtaking1/radar_points_world.csv")
+# # overtaking
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking1/rgb.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking1/radar_points_world.csv")
 
 # overtaking
 # VIDEO_PATH = os.path.join(DATA_DIR, "alarm/overtaking2/video_day(4).mp4")
@@ -51,6 +51,7 @@ OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
 DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth")
 DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
 DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
+NPY_PATH = os.path.join(DEPTH_OUTPUT_DIR, "base_depth.npy")
 LINES_JSON_PATH = os.path.join(DATA_DIR, SCENARIO, "lines.json")
 
 # yolo
@@ -85,14 +86,16 @@ MASK_Y_MIN = 0.0
 MASK_Y_MAX = 120.0
 
 WINDOW_NAME = "Traffic Analysis"
+DISPLAY_SCALE = 0.5 # TEMP WINOW
 WAIT_KEY_MS = 1
 EXIT_KEY = ord('q')
 
 WATCHDOG_ZONE_MIN = 20.0
 WATCHDOG_ZONE_MAX = 60.0
-OVERTAKING_MARGIN = 0.0
+# OVERTAKING_MARGIN = 0.0
 
-tracked_pairs = {}
+# tracked_pairs = {}
+# overtaking_events = []
 overtaking_events = []
 
 if __name__ == "__main__":
@@ -122,16 +125,28 @@ if __name__ == "__main__":
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(OUTPUT_VIDEO_PATH, fourcc, int(fps), (frameWidth, frameHeight))
 
-    depthProcessor = DepthV2(modelPath=DEPTH_MODEL_PATH, libPath=DEPTH_LIB_PATH)
+    # Depth map for the first frame
+    cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
+    _, firstFrame = cap.read()
+    cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
+    
+    baseDepthMap = loadOrComputeDepthMap(NPY_PATH, firstFrame, DEPTH_MODEL_PATH, DEPTH_LIB_PATH, DEPTH_OUTPUT_DIR)
 
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    frame = cap.read()[1]
-    baseDepthMap = depthProcessor.getDepthMap(frame)
-    depthProcessor.saveDepthMap(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth")
-
+    firstFrameResults = model.predict(source=firstFrame, imgsz=IMGSZ, conf=CONF_THRESHOLD, verbose=False, device=0 if device == 'cuda' else 'cpu', classes=ALLOWED_CLASSES_IDS)
+    firstFrameBboxes = [
+        {'x1': box[0], 'y1': box[1], 'x2': box[2], 'y2': box[3]}
+        for box in firstFrameResults[0].boxes.xyxy.cpu().numpy()
+    ] if firstFrameResults[0].boxes is not None else []
+    baseDepthMap = flattenRowsMedianBackground(baseDepthMap, firstFrameBboxes, paddingFactor=0.05)
+    saveDepthVisualization(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth_filled")
+    
     carsDict: Dict[int, Car] = {}
     frameIndex = 0
     detector = LaneDetector()
+
+    prevZoneRanking: List[int] = []
+    overtakeCooldown: Dict[frozenset, int] = {}
+    OVERTAKE_COOLDOWN_FRAMES = int(3.0 * fps)
 
     try:
         while cap.isOpened():
@@ -248,45 +263,36 @@ if __name__ == "__main__":
                     points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
                     cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
 
+
                 # overtake WATCHDOG
-                cars_in_zone = []
-                for car_id, car in carsDict.items():
-                    if car.cameraDistance is not None and WATCHDOG_ZONE_MIN <= car.cameraDistance <= WATCHDOG_ZONE_MAX:
-                        cars_in_zone.append(car)
 
-                current_zone_ids = {car.trackId for car in cars_in_zone}
+                #TODO cars_in_zone przechowuje samochody analizowane przy wyprzedzaniu, póki co przedział analizy jest określany na bazie cameraDistance, zmienić na dane z radaru! (poza tym wyprzedzanie dziala już na mapie glebi)
+                cars_in_zone = [
+                    {'id': tid, 'x1': int(box[0]), 'y1': int(box[1]), 'x2': int(box[2]), 'y2': int(box[3])}
+                    for tid, box in zip(trackIds, boxesXyxy)
+                    if tid in carsDict
+                    and carsDict[tid].cameraDistance is not None
+                    and WATCHDOG_ZONE_MIN <= carsDict[tid].cameraDistance <= WATCHDOG_ZONE_MAX
+                ]
+                # cars_in_zone = [
+                #     {'id': tid, 'x1': int(box[0]), 'y1': int(box[1]), 'x2': int(box[2]), 'y2': int(box[3])}
+                #     for tid, box in zip(trackIds, boxesXyxy)
+                # ] # to samo co na górze tylko analiza wyprzedzania bez strefy
 
-                for car1, car2 in itertools.combinations(cars_in_zone, 2):
-                    # Sort IDs to ensure consistent ordering of pairs
-                    id_pair = tuple(sorted((car1.trackId, car2.trackId)))
-                    dist1 = car1.cameraDistance
-                    dist2 = car2.cameraDistance
-
-                    # Establish leader and follower based on distance
-                    current_leader = car1.trackId if dist1 > dist2 else car2.trackId
-                    current_follower = car2.trackId if dist1 > dist2 else car1.trackId
-                    distance_diff = abs(dist1 - dist2)
-
-                    if id_pair not in tracked_pairs:
-                        # Register the pair for the first time if they are close enough
-                        if distance_diff > OVERTAKING_MARGIN:
-                            tracked_pairs[id_pair] = current_leader
-                    else:
-                        previous_leader = tracked_pairs[id_pair]
-
-                        # Detect overtaking if the leader has changed and they are sufficiently apart
-                        if previous_leader != current_leader and distance_diff > OVERTAKING_MARGIN:
-                            msg = f"WYPRZEDZANIE: {current_leader} wyprzedzil {current_follower}"
+                ranked = rankCarsByDepth(baseDepthMap, cars_in_zone)
+                currentZoneRanking = [car['id'] for car in ranked]
+                
+                if prevZoneRanking:
+                    overtakes = detectOvertaking(prevZoneRanking, currentZoneRanking)
+                    for overtaker, overtaken in overtakes:
+                        pair = frozenset([overtaker, overtaken])
+                        if frameIndex - overtakeCooldown.get(pair, -OVERTAKE_COOLDOWN_FRAMES) >= OVERTAKE_COOLDOWN_FRAMES:
+                            msg = f"[OVERTAKE] Frame {frameIndex}: Car {overtaker} overtook Car {overtaken}"
                             print(f"[WATCHDOG] {msg}")
-                            # Add event to display for a few frames
                             overtaking_events.append({'msg': msg, 'frames': int(fps * 2)})
-                            
-                            # Update the tracked leader for this pair
-                            tracked_pairs[id_pair] = current_leader
+                            overtakeCooldown[pair] = frameIndex
 
-                # Remove pairs that are no longer in the zone
-                tracked_pairs = {pair: leader for pair, leader in tracked_pairs.items() 
-                                 if pair[0] in current_zone_ids and pair[1] in current_zone_ids}
+                prevZoneRanking = currentZoneRanking
 
                 # Draw overtaking events
                 y_offset = TEXT_POSITION_Y_START + 3 * TEXT_LINE_SPACING
@@ -297,7 +303,7 @@ if __name__ == "__main__":
                     event['frames'] -= 1
                     if event['frames'] <= 0:
                         overtaking_events.remove(event)
-                
+    
 
             currentTime = START_TIME + (frameIndex * frame_time)
             cv2.putText(annotatedFrame, f"Frame: {frameIndex}", (TEXT_POSITION_X, TEXT_POSITION_Y_START),
@@ -307,13 +313,16 @@ if __name__ == "__main__":
                         TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
 
             out.write(annotatedFrame)
-            cv2.imshow(WINDOW_NAME, annotatedFrame)
+            #cv2.imshow(WINDOW_NAME, annotatedFrame)
+            # TEMP WINDOW
+            previewFrame = cv2.resize(annotatedFrame, None, fx = DISPLAY_SCALE, fy = DISPLAY_SCALE, interpolation = cv2.INTER_AREA)
+            cv2.imshow(WINDOW_NAME, previewFrame)
             if cv2.waitKey(WAIT_KEY_MS) & 0xFF == EXIT_KEY: break
 
             frameIndex += 1
 
     except Exception as e:
-        print(f"Błąd: {e}")
+        print(f"Error: {e}")
     finally:
         cap.release()
         out.release()
