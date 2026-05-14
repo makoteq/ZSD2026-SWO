@@ -3,7 +3,7 @@ import torch
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from typing import Dict, Final
+from typing import Dict, Final, Tuple
 from pathlib import Path
 from tqdm import tqdm
 from typing import Final, List
@@ -13,10 +13,10 @@ from algorithms.lane_detection_brute.lane_detection_brute import runLaneDetectio
 from utils.points import build_lines_equations
 from utils.car import Car
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
-from utils.depth_v2 import DepthV2
+from utils.depth_v2 import DepthV2, loadOrComputeDepthMap, rankCarsByDepth, flattenRowsMedianBackground, saveDepthVisualization
 from datetime import date
 from utils.weather import calcStoppingDistance, getWeather
-from utils.utils import drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, \
+from utils.utils import detectOvertaking, drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, \
     plotYOffsetCorrelation
 import matplotlib.pyplot as plt
 
@@ -24,9 +24,17 @@ CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 SCENARIO = "output"
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 
-# Control
+# # Control
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.mp4")
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
+
+# # Mareks overtaking # only to test overtaking
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/wyprzedzanie/wyprzedzanie1.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/wyprzedzanie/wyprzedzanie1.csv")
+
+# overtaking
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking1/rgb.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking1/radar_points_world.csv")
 
 # Speeding
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/21_speeding.mp4")
@@ -43,9 +51,10 @@ DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 # Lane departure
 # VIDEO_PATH = os.path.join(DATA_DIR, "alarm/trajectory_change1/rgb.mp4")
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/normalTraffic_DistMarkers/radar_points_world.csv")
-# Test
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/test/test6.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/test/test6.csv")
+
+# #Test
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/test/test6.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/test/test6.csv")
 
 CSV_PATH = os.path.join(DATA_DIR, SCENARIO, "car.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
@@ -53,6 +62,8 @@ OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
 DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth")
 DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
 DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
+NPY_PATH = os.path.join(DEPTH_OUTPUT_DIR, "base_depth.npy")
+
 
 # yolo
 ROAD_WIDTH_METERS = 7.0
@@ -89,8 +100,14 @@ MASK_Y_MAX = 120.0
 
 
 WINDOW_NAME = "Traffic Analysis"
+DISPLAY_SCALE = 0.5 # TEMP WINOW
 WAIT_KEY_MS = 1
 EXIT_KEY = ord('q')
+
+WATCHDOG_ZONE_MIN = 20.0
+WATCHDOG_ZONE_MAX = 60.0
+
+overtaking_events = []
 
 if __name__ == "__main__":
     
@@ -129,15 +146,27 @@ if __name__ == "__main__":
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(OUTPUT_VIDEO_PATH, fourcc, int(fps), (frameWidth, frameHeight))
 
-    depthProcessor = DepthV2(modelPath=DEPTH_MODEL_PATH, libPath=DEPTH_LIB_PATH)
+    # Depth map for the first frame
+    cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
+    _, firstFrame = cap.read()
+    cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
+    
+    baseDepthMap = loadOrComputeDepthMap(NPY_PATH, firstFrame, DEPTH_MODEL_PATH, DEPTH_LIB_PATH, DEPTH_OUTPUT_DIR)
 
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    frame = cap.read()[1]
-    baseDepthMap = depthProcessor.getDepthMap(frame)
-    depthProcessor.saveDepthMap(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth")
+    firstFrameResults = model.predict(source=firstFrame, imgsz=IMGSZ, conf=CONF_THRESHOLD, verbose=False, device=0 if device == 'cuda' else 'cpu', classes=ALLOWED_CLASSES_IDS)
+    firstFrameBboxes = [
+        {'x1': box[0], 'y1': box[1], 'x2': box[2], 'y2': box[3]}
+        for box in firstFrameResults[0].boxes.xyxy.cpu().numpy()
+    ] if firstFrameResults[0].boxes is not None else []
+    baseDepthMap = flattenRowsMedianBackground(baseDepthMap, firstFrameBboxes, paddingFactor=0.05)
+    saveDepthVisualization(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth_filled")
 
     carsDict: Dict[int, Car] = {}
     frameIndex = 0
+
+    prevZoneRanking: List[int] = []
+    overtakeCooldown: Dict[frozenset, int] = {}
+    OVERTAKE_COOLDOWN_FRAMES = int(3.0 * fps)
 
     try:
         while cap.isOpened():
@@ -152,7 +181,7 @@ if __name__ == "__main__":
 
 
                 ## TODO dodać wykrywanie linii, dynamiczne
-                detected_lines = getManualLaneLines(VIDEO_PATH)
+                detected_lines = getManualLaneLines(VIDEO_PATH, display_scale=DISPLAY_SCALE)
                 # detected_lines = [{'m': -0.6904761904761905, 'b': 877.8333333333334, 'x_bot': -447.8809523809524, 'abs_m': 0.6904761904761905}, {'m': 0.5178041543026706, 'b': 289.2655786350149, 'x_bot': 1283.4495548961424, 'abs_m': 0.5178041543026706}]
                 y=0
                 xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
@@ -225,14 +254,59 @@ if __name__ == "__main__":
                     cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
 
 
-                ##TODO dodać algorytm wykrywania niebezpieczeństwa
+                # overtake WATCHDOG
+
+                # poniższe cars_in_zone na bazie całego nagrania, bez strefy wyprzedzania
+                cars_in_zone = [
+                    {'id': tid, 'x1': int(box[0]), 'y1': int(box[1]), 'x2': int(box[2]), 'y2': int(box[3])}
+                    for tid, box in zip(trackIds, boxesXyxy)
+                ] 
+
+                # TODO poniższe cars_in_zone przechowuje samochody analizowane przy wyprzedzaniu, póki co przedział analizy jest określany na bazie cameraDistance, zmienić na dane z radaru! (poza tym wyprzedzanie dziala już na mapie glebi)
+
+                # cars_in_zone = [
+                #     {'id': tid, 'x1': int(box[0]), 'y1': int(box[1]), 'x2': int(box[2]), 'y2': int(box[3])}
+                #     for tid, box in zip(trackIds, boxesXyxy)
+                #     if tid in carsDict
+                #     and carsDict[tid].cameraDistance is not None
+                #     and WATCHDOG_ZONE_MIN <= carsDict[tid].cameraDistance <= WATCHDOG_ZONE_MAX
+                # ]
+                
+                ranked = rankCarsByDepth(baseDepthMap, cars_in_zone)
+                currentZoneRanking = [car['id'] for car in ranked]
+                
+                if prevZoneRanking:
+                    overtakes = detectOvertaking(prevZoneRanking, currentZoneRanking)
+                    for overtaker, overtaken in overtakes:
+                        pair = frozenset([overtaker, overtaken])
+                        if frameIndex - overtakeCooldown.get(pair, -OVERTAKE_COOLDOWN_FRAMES) >= OVERTAKE_COOLDOWN_FRAMES:
+                            msg = f"[OVERTAKE] Frame {frameIndex}: Car {overtaker} overtook Car {overtaken}"
+                            print(f"[WATCHDOG] {msg}")
+                            overtaking_events.append({'msg': msg, 'frames': int(fps * 2)})
+                            overtakeCooldown[pair] = frameIndex
+
+                prevZoneRanking = currentZoneRanking
+
+                # Draw overtaking events
+                y_offset = TEXT_POSITION_Y_START + 3 * TEXT_LINE_SPACING
+                for event in overtaking_events[:]:
+                    cv2.putText(annotatedFrame, event['msg'], (TEXT_POSITION_X, y_offset),
+                                cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, (0, 0, 255), TEXT_THICKNESS)
+                    y_offset += TEXT_LINE_SPACING
+                    event['frames'] -= 1
+                    if event['frames'] <= 0:
+                        overtaking_events.remove(event)
+
 
             currentTime = START_TIME + (frameIndex * frame_time)
             cv2.putText(annotatedFrame, f"Frame: {frameIndex}", (TEXT_POSITION_X, TEXT_POSITION_Y_START), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
             cv2.putText(annotatedFrame, f"Time: {currentTime:.2f}s", (TEXT_POSITION_X, TEXT_POSITION_Y_START + TEXT_LINE_SPACING), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
 
             out.write(annotatedFrame)
-            cv2.imshow(WINDOW_NAME, annotatedFrame)
+            #cv2.imshow(WINDOW_NAME, annotatedFrame)
+            # TEMP WINDOW
+            previewFrame = cv2.resize(annotatedFrame, None, fx = DISPLAY_SCALE, fy = DISPLAY_SCALE, interpolation = cv2.INTER_AREA)
+            cv2.imshow(WINDOW_NAME, previewFrame)
             if cv2.waitKey(WAIT_KEY_MS) & 0xFF == EXIT_KEY: break
 
 
