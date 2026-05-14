@@ -15,7 +15,8 @@ class LaneDetector:
             'hough_min_length': 0,
             'hough_max_gap': 0,
             'vp_tolerance_percentage': 0.2,
-            'vp_tolerance': 0
+            'vp_tolerance': 0,
+            'min_line_distance_percentage': 0.1,
         }
         if config:
             self.config.update(config)
@@ -193,10 +194,24 @@ class LaneDetector:
         best_combo_score = 0
         best_fallback_duo = [unique_lines[0], unique_lines[1]]
 
+        min_dist = width * self.config['min_line_distance_percentage']
+
         if len(unique_lines) >= 3:
             for combo in itertools.combinations(unique_lines, 3):
                 combo_sorted = sorted(combo, key=lambda x: x['weight'], reverse=True)
                 l1, l2, l3 = combo_sorted[0], combo_sorted[1], combo_sorted[2]
+
+                x1 = l1['m'] * y_eval + l1['b']
+                x2 = l2['m'] * y_eval + l2['b']
+                x3 = l3['m'] * y_eval + l3['b']
+
+                dist12 = abs(x1 - x2)
+                dist13 = abs(x1 - x3)
+                dist23 = abs(x2 - x3)
+
+
+                if dist12 < min_dist or dist13 < min_dist or dist23 < min_dist:
+                    continue
 
                 dm = l1['m'] - l2['m']
 
@@ -335,5 +350,7 @@ class LaneDetector:
         elif len(final_lines) >= 2:
             categorized_lines['left_line'] = final_lines[0]
             categorized_lines['right_line'] = final_lines[-1]
+
+        print(categorized_lines)
 
         return categorized_lines
