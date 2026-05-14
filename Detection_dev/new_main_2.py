@@ -25,8 +25,8 @@ SCENARIO = "output"
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 
 # Control
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/wyprzedzanie/wyprzedzanie1.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/wyprzedzanie/wyprzedzanie1.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/11_pull_over/11_pull_over.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/11_pull_over/11_pull_over--14.csv")
 
 # Speeding
 # VIDEO_PATH = os.path.join(DATA_DIR, "alarm/speeding1/rgb.mp4")
@@ -97,6 +97,7 @@ WATCHDOG_ZONE_MAX = 60.0
 # tracked_pairs = {}
 # overtaking_events = []
 overtaking_events = []
+lane_departure_events = []
 
 if __name__ == "__main__":
 
@@ -147,6 +148,9 @@ if __name__ == "__main__":
     prevZoneRanking: List[int] = []
     overtakeCooldown: Dict[frozenset, int] = {}
     OVERTAKE_COOLDOWN_FRAMES = int(3.0 * fps)
+
+    laneDepartureCooldown: Dict[int, int] = {}
+    LANE_DEPARTURE_COOLDOWN_FRAMES = int(3.0 * fps)
 
     try:
         while cap.isOpened():
@@ -259,6 +263,34 @@ if __name__ == "__main__":
                                   car.velo[-1].v, car.stoppingDistance[-1].distance, )
 
                     save_car_to_csv(car, trackId, frameIndex, CSV_PATH)
+
+                    # --- LANE DEPARTURE WATCHDOG ---
+                    x1, y1, x2, y2 = boxXyxy
+
+                    if len(detected_lines) >= 2:
+                        left_line = detected_lines[0]
+                        right_line = detected_lines[1]
+
+                        m_left, b_left = left_line.get('m'), left_line.get('b')
+                        m_right, b_right = right_line.get('m'), right_line.get('b')
+
+                        if None not in (m_left, b_left, m_right, b_right):
+                            x_left_line_at_y2 = (m_left * y2) + b_left
+                            x_right_line_at_y2 = (m_right * y2) + b_right
+
+                            out_of_left = x1 < x_left_line_at_y2
+                            out_of_right = x2 > x_right_line_at_y2
+
+                            if out_of_left or out_of_right:
+                                direction = "LEFT" if out_of_left else "RIGHT"
+
+                                if frameIndex - laneDepartureCooldown.get(trackId,
+                                                                          -LANE_DEPARTURE_COOLDOWN_FRAMES) >= LANE_DEPARTURE_COOLDOWN_FRAMES:
+                                    print(f"[LANE DEPARTURE] Car {trackId} crossed {direction} line!")
+                                    lane_departure_events.append({'msg': msg, 'frames': int(fps * 2)})
+                                    laneDepartureCooldown[trackId] = frameIndex
+
+                    # --- END LANE DEPARTURE WATCHDOG ---
 
                     points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
                     cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
