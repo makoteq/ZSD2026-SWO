@@ -103,7 +103,7 @@ import cv2
 import numpy as np
 from typing import List, Dict, Tuple, Any, Callable
 
-def getManualLaneLines(videoPath: str) -> List[Dict[str, float]]:
+def getManualLaneLines(videoPath: str, display_scale: float = 1.0) -> List[Dict[str, float]]:
     points: List[Tuple[int, int]] = []
     windowName: str = "Select 4 points: 2 for Left Lane (Top, Bot), 2 for Right Lane (Top, Bot)"
     
@@ -114,14 +114,26 @@ def getManualLaneLines(videoPath: str) -> List[Dict[str, float]]:
     if not success:
         return []
 
-    displayFrame = frame.copy()
+    # height = frame.shape[0]
+    # displayFrame = frame.copy()
+
     height = frame.shape[0]
+    if display_scale <= 0:
+        display_scale = 1.0
+    displayFrame = cv2.resize(frame, None, fx=display_scale, fy=display_scale, interpolation=cv2.INTER_AREA)
+
 
     def mouseHandler(event: int, x: int, y: int, flags: int, param: Any) -> None:
         if event == cv2.EVENT_LBUTTONDOWN:
-            points.append((x, y))
-            cv2.circle(displayFrame, (x, y), 5, (0, 0, 255), -1)
+            x_disp, y_disp = x, y
+            x_orig = int(x_disp / display_scale)
+            y_orig = int(y_disp / display_scale)
+            points.append((x_orig, y_orig))
+            cv2.circle(displayFrame, (x_disp, y_disp), 5, (0, 0, 255), -1)
             cv2.imshow(windowName, displayFrame)
+            # points.append((x, y))
+            # cv2.circle(displayFrame, (x, y), 5, (0, 0, 255), -1)
+            # cv2.imshow(windowName, displayFrame)
 
     cv2.namedWindow(windowName, cv2.WINDOW_AUTOSIZE)
     cv2.setMouseCallback(windowName, mouseHandler)
