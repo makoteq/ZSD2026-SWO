@@ -18,6 +18,7 @@ from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
 from utils.depth_v2 import DepthV2, loadOrComputeDepthMap, rankCarsByDepth, flattenRowsMedianBackground, saveDepthVisualization
 from utils.utils import detectOvertaking, drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, \
     plotYOffsetCorrelation
+from utils.alarm_manager import AlarmManager
 import matplotlib.pyplot as plt
 
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
@@ -96,8 +97,9 @@ WATCHDOG_ZONE_MAX = 60.0
 
 # tracked_pairs = {}
 # overtaking_events = []
-overtaking_events = []
-lane_departure_events = []
+
+
+alarm_manager = AlarmManager()
 
 if __name__ == "__main__":
 
@@ -158,6 +160,8 @@ if __name__ == "__main__":
             success, frame = cap.read()
             if not success: break
 
+            currentTime = START_TIME + (frameIndex * frame_time)
+
             staleIds = [carId for carId, carObj in carsDict.items() if carObj.lastSeen < frameIndex - 5]
             for carId in staleIds: del carsDict[carId]
 
@@ -178,7 +182,7 @@ if __name__ == "__main__":
 
                 print("Detected lines:", detected_lines)
 
-            if frameIndex % RADAR_STEP_INTERVAL == 0:
+            if frameIndex % RADAR_STEP_INTERVAL == 0 and not alarm_manager.is_radar_disabled(currentTime):
                 radar_setp = frame_time * RADAR_STEP_INTERVAL
                 radar.step(radar_setp)
                 radar.clusterPoints()
@@ -192,14 +196,16 @@ if __name__ == "__main__":
                     print(f"Distance: {currentDistance:.2f} m")
                     currentVelocity: float = abs(cluster['radial_velocity'])
                     if currentVelocity > SPEED_LIMIT:
-                        print(f"[WARNING] Speed limit exceeded by cluster: {currentVelocity:.2f} m/s")
+
+                        alarm_manager.trigger(1, f"Speed limit exceeded by cluster: {currentVelocity:.1f} m/s", 0.0,
+                                              currentTime)
                     elif carId is not None and carId in carsDict:
                         car = carsDict[carId]
                         stoppingDist = car.stoppingDistance[-1].distance
 
                         if stoppingDist >= currentDistance:
-                            print(
-                                f"[LEVEL 2 WARNING] Detected vehicle won't be able to stop in time: {stoppingDist:.2f} m > {currentDistance:.2f} m")
+                            alarm_manager.trigger(2, f"Detected vehicle won't be able to stop in time {stoppingDist:.1f}m > {currentDistance:.1f}m",
+                                                  0.0, currentTime)
 
                 # TODO przkeorczenuie prędkosci
 
@@ -286,8 +292,8 @@ if __name__ == "__main__":
 
                                 if frameIndex - laneDepartureCooldown.get(trackId,
                                                                           -LANE_DEPARTURE_COOLDOWN_FRAMES) >= LANE_DEPARTURE_COOLDOWN_FRAMES:
-                                    print(f"[LANE DEPARTURE] Car {trackId} crossed {direction} line!")
-                                    lane_departure_events.append({'msg': msg, 'frames': int(fps * 2)})
+                                    alarm_manager.trigger(1, f"Lane departure car {trackId} crossed {direction} line!", 0.0, currentTime)
+
                                     laneDepartureCooldown[trackId] = frameIndex
 
                     # --- END LANE DEPARTURE WATCHDOG ---
@@ -320,29 +326,21 @@ if __name__ == "__main__":
                         pair = frozenset([overtaker, overtaken])
                         if frameIndex - overtakeCooldown.get(pair, -OVERTAKE_COOLDOWN_FRAMES) >= OVERTAKE_COOLDOWN_FRAMES:
                             msg = f"[OVERTAKE] Frame {frameIndex}: Car {overtaker} overtook Car {overtaken}"
-                            print(f"[WATCHDOG] {msg}")
-                            overtaking_events.append({'msg': msg, 'frames': int(fps * 2)})
+                            alarm_manager.trigger(1, msg, 0.0, currentTime)
                             overtakeCooldown[pair] = frameIndex
 
                 prevZoneRanking = currentZoneRanking
 
-                # Draw overtaking events
-                y_offset = TEXT_POSITION_Y_START + 3 * TEXT_LINE_SPACING
-                for event in overtaking_events[:]:
-                    cv2.putText(annotatedFrame, event['msg'], (TEXT_POSITION_X, y_offset),
-                                cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, (0, 0, 255), TEXT_THICKNESS)
-                    y_offset += TEXT_LINE_SPACING
-                    event['frames'] -= 1
-                    if event['frames'] <= 0:
-                        overtaking_events.remove(event)
+
     
 
-            currentTime = START_TIME + (frameIndex * frame_time)
             cv2.putText(annotatedFrame, f"Frame: {frameIndex}", (TEXT_POSITION_X, TEXT_POSITION_Y_START),
                         cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
             cv2.putText(annotatedFrame, f"Time: {currentTime:.2f}s",
                         (TEXT_POSITION_X, TEXT_POSITION_Y_START + TEXT_LINE_SPACING), cv2.FONT_HERSHEY_SIMPLEX,
                         TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
+
+            alarm_manager.draw(annotatedFrame, currentTime)
 
             out.write(annotatedFrame)
             #cv2.imshow(WINDOW_NAME, annotatedFrame)
