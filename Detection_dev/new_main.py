@@ -31,9 +31,13 @@ DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.mp4")
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
 
-# # Mareks overtaking # only to test overtaking
-# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/wyprzedzanie/wyprzedzanie1.mp4")
-# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/wyprzedzanie/wyprzedzanie1.csv")
+# seb new overtaking
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/new_overtaking/1_overtaking/1_overtaking.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/new_overtaking/1_overtaking/1_overtaking--6.5.csv")
+
+# # seb new double overtaking
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/new_overtaking/1_overtaking_double/1_overtaking_double.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/new_overtaking/1_overtaking_double/1_overtaking_double--6.5.csv")
 
 # overtaking
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking1/rgb.mp4")
@@ -51,9 +55,9 @@ DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking2/video_day(4).mp4")
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/normalTraffic_DistMarkers/radar_points_world.csv")
 
-# Lane departure
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/11_pull_over/11_pull_over.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/11_pull_over/11_pull_over--14.csv")
+# # Lane departure
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/11_pull_over/11_pull_over.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/11_pull_over/11_pull_over--14.csv")
 
 # Test
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/test/test6.mp4")
@@ -108,9 +112,6 @@ WINDOW_NAME = "Traffic Analysis"
 DISPLAY_SCALE = 0.5 # TEMP WINOW
 WAIT_KEY_MS = 1
 EXIT_KEY = ord('q')
-
-WATCHDOG_ZONE_MIN = 20.0
-WATCHDOG_ZONE_MAX = 60.0
 
 
 alarm_manager = AlarmManager()
@@ -170,6 +171,11 @@ if __name__ == "__main__":
     carsDict: Dict[int, Car] = {}
     frameIndex = 0
 
+    overtakingLineY = None
+    overtakingLineTriggered = False
+    OVERTAKING_LINE_THRESHOLD = 60.0
+    closestRadarDistance = float('inf')
+
     prevZoneRanking: List[int] = []
     overtakeCooldown: Dict[frozenset, int] = {}
     OVERTAKE_COOLDOWN_FRAMES = int(3.0 * fps)
@@ -218,6 +224,14 @@ if __name__ == "__main__":
                 # radar.visualizeClusteredStep()
                 clusterCenters = radar.getClusterCenters()
 
+                # trigger when first ccluster enter overtaking zone
+                if clusterCenters:
+                    closestRadarCluster = min(clusterCenters, key=lambda c: abs(c['y_corrected']))
+                    closestRadarDistance = abs(closestRadarCluster['y_corrected'])
+
+                    if closestRadarDistance <= OVERTAKING_LINE_THRESHOLD and overtakingLineY is None:
+                        overtakingLineTriggered = True
+
                 for cluster in clusterCenters:
                     currentDistance: float = abs(cluster['y_corrected'])
                     currentVelocity: float = abs(cluster['radial_velocity'])
@@ -232,7 +246,7 @@ if __name__ == "__main__":
                                               currentTime)
                 #TODO przkeorczenuie prędkosci 
 
-                plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters)
+                plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters, frameIndex, currentTime)
                 dist  = matchClustersToCars(carsDict, clusterCenters, frameIndex)
                 print(dist)
                 
@@ -323,23 +337,20 @@ if __name__ == "__main__":
                     cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
 
 
-                # overtake WATCHDOG
+                # OVERTAKING
+                 
+                # determining overtaking zone line position
+                if overtakingLineTriggered and overtakingLineY is None:
+                    closestCarIdx = max(range(len(trackIds)), key=lambda i: boxesXyxy[i][3])
+                    overtakingLineY = int(boxesXyxy[closestCarIdx][3])
+                    print(f"[MONITOR] Overtaking zone starts from Y={overtakingLineY}px ({closestRadarDistance:.2f}m)")
 
-                # poniższe cars_in_zone na bazie całego nagrania, bez strefy wyprzedzania
+                # list of cars that are in the overtaking zone, below overtakingLineY
                 cars_in_zone = [
                     {'id': tid, 'x1': int(box[0]), 'y1': int(box[1]), 'x2': int(box[2]), 'y2': int(box[3])}
                     for tid, box in zip(trackIds, boxesXyxy)
-                ] 
-
-                # TODO poniższe cars_in_zone przechowuje samochody analizowane przy wyprzedzaniu, póki co przedział analizy jest określany na bazie cameraDistance, zmienić na dane z radaru! (poza tym wyprzedzanie dziala już na mapie glebi)
-
-                # cars_in_zone = [
-                #     {'id': tid, 'x1': int(box[0]), 'y1': int(box[1]), 'x2': int(box[2]), 'y2': int(box[3])}
-                #     for tid, box in zip(trackIds, boxesXyxy)
-                #     if tid in carsDict
-                #     and carsDict[tid].cameraDistance is not None
-                #     and WATCHDOG_ZONE_MIN <= carsDict[tid].cameraDistance <= WATCHDOG_ZONE_MAX
-                # ]
+                    if overtakingLineY is not None and int(box[1]) >= overtakingLineY
+                ]
                 
                 ranked = rankCarsByDepth(baseDepthMap, cars_in_zone)
                 currentZoneRanking = [car['id'] for car in ranked]
@@ -350,12 +361,15 @@ if __name__ == "__main__":
                         pair = frozenset([overtaker, overtaken])
                         if frameIndex - overtakeCooldown.get(pair, -OVERTAKE_COOLDOWN_FRAMES) >= OVERTAKE_COOLDOWN_FRAMES:
                             msg = f"[OVERTAKE] Frame {frameIndex}: Car {overtaker} overtook Car {overtaken}"
+                            print(msg) #debug print
                             alarm_manager.trigger(1, msg, 0.0, currentTime)
                             overtakeCooldown[pair] = frameIndex
 
                 prevZoneRanking = currentZoneRanking
 
-
+            # overtaking line visualization 
+            if overtakingLineY is not None:
+                cv2.line(annotatedFrame, (0, overtakingLineY), (frameWidth, overtakingLineY), (0, 255, 255), 2)
 
             cv2.putText(annotatedFrame, f"Frame: {frameIndex}", (TEXT_POSITION_X, TEXT_POSITION_Y_START), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
             cv2.putText(annotatedFrame, f"Time: {currentTime:.2f}s", (TEXT_POSITION_X, TEXT_POSITION_Y_START + TEXT_LINE_SPACING), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
