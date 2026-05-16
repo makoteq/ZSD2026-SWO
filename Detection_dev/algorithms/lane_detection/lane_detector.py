@@ -102,8 +102,6 @@ class LaneDetector:
 
         kernel_dilate = np.ones((5, 5), np.uint8)
         final_mask = cv2.dilate(original_pixels_kept, kernel_dilate, iterations=1)
-        cv2.imshow('final_mask', final_mask)
-
         return final_mask
 
     def get_math_lines(self, paint_mask):
@@ -350,7 +348,5 @@ class LaneDetector:
         elif len(final_lines) >= 2:
             categorized_lines['left_line'] = final_lines[0]
             categorized_lines['right_line'] = final_lines[-1]
-
-        print(categorized_lines)
 
         return categorized_lines
