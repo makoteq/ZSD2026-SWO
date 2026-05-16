@@ -1,4 +1,5 @@
 import os
+import json
 import torch
 import cv2
 import numpy as np
@@ -7,18 +8,20 @@ from typing import Dict, Final, Tuple
 from pathlib import Path
 from tqdm import tqdm
 from typing import Final, List
+import matplotlib.pyplot as plt
 
-# Importy lokalne
-from algorithms.lane_detection_brute.lane_detection_brute import runLaneDetection
-from utils.points import build_lines_equations
+
+# Local imports
+from algorithms.lane_detection.lane_detector import LaneDetector
+#from utils.points import build_lines_equations
 from utils.car import Car
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
 from utils.depth_v2 import DepthV2, loadOrComputeDepthMap, rankCarsByDepth, flattenRowsMedianBackground, saveDepthVisualization
 from datetime import date
 from utils.weather import calcStoppingDistance, getWeather
-from utils.utils import detectOvertaking, drawCustomBox, plotRadarComparison, matchClustersToCars, getManualLaneLines, save_car_to_csv, \
+from utils.utils import detectOvertaking, drawCustomBox, plotRadarComparison, matchClustersToCars, save_car_to_csv, \
     plotYOffsetCorrelation
-import matplotlib.pyplot as plt
+from utils.alarm_manager import AlarmManager
 
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 SCENARIO = "output"
@@ -33,8 +36,8 @@ DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/wyprzedzanie/wyprzedzanie1.csv")
 
 # overtaking
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking1/rgb.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking1/radar_points_world.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking1/rgb.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking1/radar_points_world.csv")
 
 # Speeding
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/21_speeding.mp4")
@@ -49,10 +52,10 @@ RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking1/radar_points_
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/normalTraffic_DistMarkers/radar_points_world.csv")
 
 # Lane departure
-# VIDEO_PATH = os.path.join(DATA_DIR, "alarm/trajectory_change1/rgb.mp4")
-# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/normalTraffic_DistMarkers/radar_points_world.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/11_pull_over/11_pull_over.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/11_pull_over/11_pull_over--14.csv")
 
-# #Test
+# Test
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/test/test6.mp4")
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/test/test6.csv")
 
@@ -63,6 +66,7 @@ DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth"
 DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
 DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
 NPY_PATH = os.path.join(DEPTH_OUTPUT_DIR, "base_depth.npy")
+LINES_JSON_PATH = os.path.join(DATA_DIR, SCENARIO, "lines.json") # always delete lines.json file if video path is changed
 
 
 # yolo
@@ -91,6 +95,7 @@ BOX_THICKNESS: Final[int] = 2
 
 SPEED_LIMIT_KMH: Final[float] = 60.0
 SPEED_LIMIT: Final[float] = SPEED_LIMIT_KMH / 3.6
+
 # radar
 RADAR_STEP_INTERVAL = 5
 MASK_Z_MIN = 30.0
@@ -107,7 +112,8 @@ EXIT_KEY = ord('q')
 WATCHDOG_ZONE_MIN = 20.0
 WATCHDOG_ZONE_MAX = 60.0
 
-overtaking_events = []
+
+alarm_manager = AlarmManager()
 
 if __name__ == "__main__":
     
@@ -168,25 +174,40 @@ if __name__ == "__main__":
     overtakeCooldown: Dict[frozenset, int] = {}
     OVERTAKE_COOLDOWN_FRAMES = int(3.0 * fps)
 
+    laneDepartureCooldown: Dict[int, int] = {}
+    LANE_DEPARTURE_COOLDOWN_FRAMES = int(3.0 * fps)
+
+    detector = LaneDetector()
+
     try:
         while cap.isOpened():
             
             success, frame = cap.read()
             if not success: break
 
+            currentTime = START_TIME + (frameIndex * frame_time)
+
             staleIds = [carId for carId, carObj in carsDict.items() if carObj.lastSeen < frameIndex - 5]
             for carId in staleIds: del carsDict[carId]
             
             if frameIndex == 0:
+                # lane detection only if there is none lines.json file
+                if os.path.exists(LINES_JSON_PATH):
+                    with open(LINES_JSON_PATH, 'r') as f:
+                        lines_dick = json.load(f)
+                else:
+                    lines_dick = detector.detect(frame)
+                    with open(LINES_JSON_PATH, 'w') as f:
+                        json.dump(lines_dick, f, indent=4)
 
-
-                ## TODO dodać wykrywanie linii, dynamiczne
-                detected_lines = getManualLaneLines(VIDEO_PATH, display_scale=DISPLAY_SCALE)
-                # detected_lines = [{'m': -0.6904761904761905, 'b': 877.8333333333334, 'x_bot': -447.8809523809524, 'abs_m': 0.6904761904761905}, {'m': 0.5178041543026706, 'b': 289.2655786350149, 'x_bot': 1283.4495548961424, 'abs_m': 0.5178041543026706}]
-                y=0
-                xLeft = (detected_lines[0]['m'] * y) + detected_lines[0]['b']
-                xRight = (detected_lines[1]['m'] * y) + detected_lines[1]['b']
+                xLeft = lines_dick["left_line"]["start"][0]
+                xRight = lines_dick["right_line"]["start"][0]
                 road_width_h0_px = abs(xRight - xLeft)
+
+                # we are using only left and right lines
+                detected_lines = [lines_dick["left_line"], lines_dick["right_line"]] # converting dictionary into array for easier use
+
+                print("Detected lines:", detected_lines)
 
 
 
@@ -204,10 +225,11 @@ if __name__ == "__main__":
                     print(f"Distance: {currentDistance:.2f} m")
 
                     if stoppingDistance >= currentDistance:
-                        print(f"[LEVEL 2 WARNING] Detected vehicle won't be able to stop in time: {stoppingDistance:.2f} m > {currentDistance:.2f} m")
+                        alarm_manager.trigger(2,f"Detected vehicle won't be able to stop in time {stoppingDistance:.1f}m > {currentDistance:.1f}m",
+                                              0.0, currentTime)
                     elif currentVelocity > SPEED_LIMIT:
-                        print(f"[WARNING] Speed limit exceeded by cluster: {currentVelocity:.2f} m/s")
-
+                        alarm_manager.trigger(1, f"Speed limit exceeded by cluster: {currentVelocity:.1f} m/s", 0.0,
+                                              currentTime)
                 #TODO przkeorczenuie prędkosci 
 
                 plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters)
@@ -216,6 +238,26 @@ if __name__ == "__main__":
                 
             results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
             annotatedFrame = frame.copy()
+
+            LANE_LINE_COLOR = (0, 200, 255)
+            LANE_LINE_THICKNESS = 2
+            y_top = 0
+            y_bottom = frameHeight - 1
+            for line in detected_lines:
+                m = line.get('m')
+                b = line.get('b')
+                if m is None or b is None:
+                    continue
+
+                x_top = int((m * y_top) + b)
+                x_bottom = int((m * y_bottom) + b)
+                cv2.line(
+                    annotatedFrame,
+                    (x_top, y_top),
+                    (x_bottom, y_bottom),
+                    LANE_LINE_COLOR,
+                    LANE_LINE_THICKNESS,
+                )
 
 
 
@@ -250,6 +292,33 @@ if __name__ == "__main__":
 
                     save_car_to_csv(car, trackId, frameIndex, CSV_PATH)
 
+                    # --- LANE DEPARTURE WATCHDOG ---
+                    x1, y1, x2, y2 = boxXyxy
+
+                    if len(detected_lines) >= 2:
+                        left_line = detected_lines[0]
+                        right_line = detected_lines[1]
+
+                        m_left, b_left = left_line.get('m'), left_line.get('b')
+                        m_right, b_right = right_line.get('m'), right_line.get('b')
+
+                        if None not in (m_left, b_left, m_right, b_right):
+                            x_left_line_at_y2 = (m_left * y2) + b_left
+                            x_right_line_at_y2 = (m_right * y2) + b_right
+
+                            out_of_left = x1 < x_left_line_at_y2
+                            out_of_right = x2 > x_right_line_at_y2
+
+                            if out_of_left or out_of_right:
+                                direction = "LEFT" if out_of_left else "RIGHT"
+
+                                if frameIndex - laneDepartureCooldown.get(trackId,
+                                                                          -LANE_DEPARTURE_COOLDOWN_FRAMES) >= LANE_DEPARTURE_COOLDOWN_FRAMES:
+                                    alarm_manager.trigger(1, f"Lane departure car {trackId} crossed {direction} line!",
+                                                          0.0, currentTime)
+                                    laneDepartureCooldown[trackId] = frameIndex
+                    # --- END LANE DEPARTURE WATCHDOG ---
+
                     points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
                     cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
 
@@ -281,28 +350,19 @@ if __name__ == "__main__":
                         pair = frozenset([overtaker, overtaken])
                         if frameIndex - overtakeCooldown.get(pair, -OVERTAKE_COOLDOWN_FRAMES) >= OVERTAKE_COOLDOWN_FRAMES:
                             msg = f"[OVERTAKE] Frame {frameIndex}: Car {overtaker} overtook Car {overtaken}"
-                            print(f"[WATCHDOG] {msg}")
-                            overtaking_events.append({'msg': msg, 'frames': int(fps * 2)})
+                            alarm_manager.trigger(1, msg, 0.0, currentTime)
                             overtakeCooldown[pair] = frameIndex
 
                 prevZoneRanking = currentZoneRanking
 
-                # Draw overtaking events
-                y_offset = TEXT_POSITION_Y_START + 3 * TEXT_LINE_SPACING
-                for event in overtaking_events[:]:
-                    cv2.putText(annotatedFrame, event['msg'], (TEXT_POSITION_X, y_offset),
-                                cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, (0, 0, 255), TEXT_THICKNESS)
-                    y_offset += TEXT_LINE_SPACING
-                    event['frames'] -= 1
-                    if event['frames'] <= 0:
-                        overtaking_events.remove(event)
 
 
-            currentTime = START_TIME + (frameIndex * frame_time)
             cv2.putText(annotatedFrame, f"Frame: {frameIndex}", (TEXT_POSITION_X, TEXT_POSITION_Y_START), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
             cv2.putText(annotatedFrame, f"Time: {currentTime:.2f}s", (TEXT_POSITION_X, TEXT_POSITION_Y_START + TEXT_LINE_SPACING), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
 
+            alarm_manager.draw(annotatedFrame, currentTime)
             out.write(annotatedFrame)
+
             #cv2.imshow(WINDOW_NAME, annotatedFrame)
             # TEMP WINDOW
             previewFrame = cv2.resize(annotatedFrame, None, fx = DISPLAY_SCALE, fy = DISPLAY_SCALE, interpolation = cv2.INTER_AREA)
