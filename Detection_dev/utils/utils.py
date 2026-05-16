@@ -166,7 +166,7 @@ def getManualLaneLines(videoPath: str, display_scale: float = 1.0) -> List[Dict[
     print(f"\ndetected_lines = {detectedLines}\n")
     return detectedLines
 
-def plotRadarComparison(minX: float, maxX: float, minY: float, maxY: float, carsDict: Dict[int, Any], clusterCenters: List[Dict[str, Any]]) -> None:
+def plotRadarComparison(minX: float, maxX: float, minY: float, maxY: float, carsDict: Dict[int, Any], clusterCenters: List[Dict[str, Any]], frameIndex: int, currentTime: float) -> None:
     if not plt.fignum_exists(1):
         plt.figure(1, figsize=(8, 8))
     else:
@@ -191,6 +191,7 @@ def plotRadarComparison(minX: float, maxX: float, minY: float, maxY: float, cars
     plt.xlabel('X [m]')
     plt.ylabel('Y [m]')
     plt.legend(loc='upper right')
+    plt.title(f"Frame: {frameIndex} | Time: {currentTime:.2f}s")
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.draw()
     plt.pause(0.01)
