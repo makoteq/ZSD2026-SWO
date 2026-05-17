@@ -123,11 +123,12 @@ EXIT_KEY = ord('q')
 
 RUN_MODE = "batch"  # "single" or "batch"
 DATASET_ROOT = os.path.join(DATA_DIR, "dataset")
-BATCH_CSV_SUFFIX = "--6.5.csv"
+BATCH_CSV_SUFFIX = "--6.0.csv"
 BATCH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "batch")
 BATCH_WRITE_VIDEOS = False
 BATCH_SHOW_WINDOW = True
 BATCH_DEBUG_VISUALS = False
+BATCH_MAX_RECORDINGS: Optional[int] = None
 
 
 def classify_alarm_reason(reason: str) -> str:
@@ -143,6 +144,45 @@ def classify_alarm_reason(reason: str) -> str:
     if "stop" in lowered and "distance" in lowered:
         return "stopping_distance"
     return "other"
+
+
+CODE_ORDER: Final[Tuple[str, ...]] = ("A", "B", "C")
+CODE_TO_REASON: Final[Dict[str, str]] = {
+    "A": "speed_limit_exceeded",
+    "B": "lane_departure",
+    "C": "overtaking_detected",
+}
+REASON_TO_CODE: Final[Dict[str, str]] = {
+    "speed_limit_exceeded": "A",
+    "lane_departure": "B",
+    "overtaking_detected": "C",
+}
+
+
+def parse_expected_codes_from_path(video_path: str) -> List[str]:
+    stem = Path(video_path).stem
+    parts = stem.split("_", 1)
+    if len(parts) < 2:
+        return []
+    raw_codes = parts[1].upper()
+    codes = [code for code in raw_codes if code in CODE_TO_REASON]
+    return sorted(set(codes), key=CODE_ORDER.index)
+
+
+def parse_detected_codes_from_reasons(alarm_reasons: str) -> List[str]:
+    if not alarm_reasons or alarm_reasons == "none":
+        return []
+    codes: List[str] = []
+    for reason_part in alarm_reasons.split(";"):
+        reason = reason_part.split("(", 1)[0].strip()
+        code = REASON_TO_CODE.get(reason)
+        if code:
+            codes.append(code)
+    return sorted(set(codes), key=CODE_ORDER.index)
+
+
+def format_codes(codes: List[str]) -> str:
+    return "".join(codes) if codes else "none"
 
 
 class BatchAlarmTracker:
@@ -562,6 +602,9 @@ def run_batch(model: YOLO, device: str) -> None:
         print(f"[INFO] No valid MP4/CSV pairs found in: {DATASET_ROOT}")
         return
 
+    if BATCH_MAX_RECORDINGS is not None:
+        recordings = recordings[:BATCH_MAX_RECORDINGS]
+
     print(f"[INFO] Recordings to analyze: {len(recordings)}")
 
     lat = 54.37163
@@ -633,14 +676,17 @@ def run_batch(model: YOLO, device: str) -> None:
         if shared_depth_map is None and depth_map is not None:
             shared_depth_map = depth_map
 
-        expected_alarm = folder_label == "alarm"
-        is_match = alarm_detected == expected_alarm
-        if is_match:
+        expected_codes = parse_expected_codes_from_path(video_path)
+        detected_codes = parse_detected_codes_from_reasons(alarm_reasons)
+        expected_alarm = bool(expected_codes)
+        codes_match = set(expected_codes) == set(detected_codes)
+        if codes_match:
             correct_count += 1
 
         print(
-            f"[BATCH][RESULT] alarmDetected={alarm_detected} | reasons={alarm_reasons} | expected={expected_alarm} "
-            f"| match={is_match}"
+            f"[BATCH][RESULT] alarmDetected={alarm_detected} | reasons={alarm_reasons} | "
+            f"expectedCodes={format_codes(expected_codes)} | detectedCodes={format_codes(detected_codes)} "
+            f"| match={codes_match}"
         )
 
         report_rows.append(
@@ -650,8 +696,10 @@ def run_batch(model: YOLO, device: str) -> None:
                 "csv_path": os.path.relpath(csv_path, DATASET_ROOT),
                 "alarm_detected": str(alarm_detected),
                 "alarm_reasons": alarm_reasons,
+                "expected_codes": format_codes(expected_codes),
+                "detected_codes": format_codes(detected_codes),
                 "expected_alarm": str(expected_alarm),
-                "match": str(is_match),
+                "match": str(codes_match),
             }
         )
 

@@ -97,13 +97,14 @@ def save_batch_report_markdown(
         f"- False alarm rate (FAR): **{false_alarm_rate:.2f}%**",
         f"- True alarm rate (TAR): **{true_alarm_rate:.2f}%**",
         "",
-        "| # | expected_folder | alarm_detected | alarm_reasons | expected_alarm | match | video_path | csv_path |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| # | expected_folder | expected_codes | detected_codes | alarm_detected | alarm_reasons | expected_alarm | match | video_path | csv_path |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
 
     for idx, row in enumerate(report_rows, start=1):
         md_lines.append(
-            f"| {idx} | {esc(row['expected_folder'])} | {esc(row['alarm_detected'])} | "
+            f"| {idx} | {esc(row['expected_folder'])} | {esc(row.get('expected_codes', 'none'))} | "
+            f"{esc(row.get('detected_codes', 'none'))} | {esc(row['alarm_detected'])} | "
             f"{esc(row['alarm_reasons'])} | {esc(row['expected_alarm'])} | {esc(row['match'])} | "
             f"{esc(row['video_path'])} | {esc(row['csv_path'])} |"
         )
