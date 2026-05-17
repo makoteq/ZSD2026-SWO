@@ -158,6 +158,7 @@ if __name__ == "__main__":
     _, firstFrame = cap.read()
     cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
     
+    depthMapComputed = not os.path.exists(NPY_PATH)
     baseDepthMap = loadOrComputeDepthMap(NPY_PATH, firstFrame, DEPTH_MODEL_PATH, DEPTH_LIB_PATH, DEPTH_OUTPUT_DIR)
 
     firstFrameResults = model.predict(source=firstFrame, imgsz=IMGSZ, conf=CONF_THRESHOLD, verbose=False, device=0 if device == 'cuda' else 'cpu', classes=ALLOWED_CLASSES_IDS)
@@ -166,7 +167,8 @@ if __name__ == "__main__":
         for box in firstFrameResults[0].boxes.xyxy.cpu().numpy()
     ] if firstFrameResults[0].boxes is not None else []
     baseDepthMap = flattenRowsMedianBackground(baseDepthMap, firstFrameBboxes, paddingFactor=0.05)
-    saveDepthVisualization(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth_filled")
+    if depthMapComputed:
+        saveDepthVisualization(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth_filled")
 
     carsDict: Dict[int, Car] = {}
     frameIndex = 0
