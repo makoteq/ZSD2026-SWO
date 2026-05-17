@@ -159,8 +159,13 @@ REASON_TO_CODE: Final[Dict[str, str]] = {
 }
 
 
-def parse_expected_codes_from_path(video_path: str) -> List[str]:
+def parse_expected_codes_from_path(video_path: str, folder_label: Optional[str] = None) -> List[str]:
     stem = Path(video_path).stem
+    if folder_label and folder_label.lower() == "noalarm":
+        return []
+    lower_path = video_path.lower()
+    if "control" in stem.lower() or "noalarm" in lower_path:
+        return []
     parts = stem.split("_", 1)
     if len(parts) < 2:
         return []
@@ -676,7 +681,7 @@ def run_batch(model: YOLO, device: str) -> None:
         if shared_depth_map is None and depth_map is not None:
             shared_depth_map = depth_map
 
-        expected_codes = parse_expected_codes_from_path(video_path)
+        expected_codes = parse_expected_codes_from_path(video_path, folder_label=folder_label)
         detected_codes = parse_detected_codes_from_reasons(alarm_reasons)
         expected_alarm = bool(expected_codes)
         codes_match = set(expected_codes) == set(detected_codes)
