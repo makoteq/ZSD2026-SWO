@@ -4,85 +4,71 @@ import torch
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from typing import Dict, Final, Tuple
-from pathlib import Path
-from tqdm import tqdm
+from typing import Dict
 from typing import Final, List
-import matplotlib.pyplot as plt
-
 
 # Local imports
-from algorithms.lane_detection.lane_detector import LaneDetector
-#from utils.points import build_lines_equations
 from utils.car import Car
-from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
-from utils.depth_v2 import DepthV2, loadOrComputeDepthMap, rankCarsByDepth, flattenRowsMedianBackground, saveDepthVisualization
-from datetime import date
-from utils.weather import calcStoppingDistance, getWeather
-from utils.utils import detectOvertaking, drawCustomBox, plotRadarComparison, matchClustersToCars, save_car_to_csv, \
-    plotYOffsetCorrelation
+from utils.radar import Radar
+from utils.depth_v2 import loadOrComputeDepthMap, rankCarsByDepth, flattenRowsMedianBackground, saveDepthVisualization
+from utils.weather import calcStoppingDistance
+from utils.utils import detectOvertaking, drawCustomBox, plotRadarComparison, matchClustersToCars, save_car_to_csv
 from utils.alarm_manager import AlarmManager
 
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 SCENARIO = "output"
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 
+CONFIG_JSON_PATH = os.path.join(DATA_DIR, "config", "config.json")
+
+with open(CONFIG_JSON_PATH, 'r', encoding='utf-8') as f:
+    cfg = json.load(f)
+
 # Control
-# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.mp4")
-# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_Control/1_Control.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_Control/1_Control--6.0.csv")
 
-# seb new overtaking
-VIDEO_PATH = os.path.join(DATA_DIR, "new_overtaking/1_overtaking/1_overtaking.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "new_overtaking/1_overtaking/1_overtaking--6.5.csv")
+# normal traffic
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/7_Control/7_Control.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/7_Control/7_Control--6.0.csv")
 
-# # seb new double overtaking
-# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/new_overtaking/1_overtaking_double/1_overtaking_double.mp4")
-# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/new_overtaking/1_overtaking_double/1_overtaking_double--6.5.csv")
+# speeding
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_A/1_A.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_A/1_A--6.0.csv")
+
+# speeding/lane departure
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_AB/1_AB.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_AB/1_AB--6.0.csv")
+
+# speeding/overtaking
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_AC/1_AC.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_AC/1_AC--6.0.csv")
+
+# lane departure
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_B/1_B.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_B/1_B--6.0.csv")
 
 # overtaking
-# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking1/rgb.mp4")
-# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking1/radar_points_world.csv")
-
-# Speeding
-# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/21_speeding.mp4")
-# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/21_speeding.csv")
-
-# overtaking
-# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.mp4")
-# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/33_overtaking.csv")
-
-# overtaking
-# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/overtaking2/video_day(4).mp4")
-# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/normalTraffic_DistMarkers/radar_points_world.csv")
-
-# # Lane departure
-# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/11_pull_over/11_pull_over.mp4")
-# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/11_pull_over/11_pull_over--14.csv")
-
-# Test
-# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/test/test6.mp4")
-# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/test/test6.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_C/1_C.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_C/1_C--6.0.csv")
 
 CSV_PATH = os.path.join(DATA_DIR, SCENARIO, "car.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
-DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth")
+DEPTH_MODEL_PATH = cfg["depth"]["model_path"]
 DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
-DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
-NPY_PATH = os.path.join(DEPTH_OUTPUT_DIR, "base_depth.npy")
-LINES_JSON_PATH = os.path.join(DATA_DIR, SCENARIO, "lines.json") # always delete lines.json file if video path is changed
-
+DEPTH_OUTPUT_DIR = cfg["depth"]["output_dir"]
+NPY_PATH = cfg["depth"]["npy_path"]
 
 # yolo
-ROAD_WIDTH_METERS = 7.0
-FOV = 20.0
+ROAD_WIDTH_METERS = cfg["geometry"]["road_width_meters"]
+FOV = cfg["geometry"]["fov_deg"]
 
 START_TIME = 0.0
 RADAR_DELAY = 0.0
 CONF_THRESHOLD = 0.8
 IMGSZ = 800
 ALLOWED_CLASSES_IDS = [0]
-MAX_MISSING_FRAMES = 5
 LINE_THICKNESS = 1
 TRACK_COLOR = (0, 255, 0)
 
@@ -92,9 +78,6 @@ TEXT_SCALE: Final[float] = 0.7
 TEXT_POSITION_X: Final[int] = 20
 TEXT_POSITION_Y_START: Final[int] = 30
 TEXT_LINE_SPACING: Final[int] = 30
-
-BOX_COLOR: Final[tuple] = (0, 255, 0)
-BOX_THICKNESS: Final[int] = 2
 
 SPEED_LIMIT_KMH: Final[float] = 60.0
 SPEED_LIMIT: Final[float] = SPEED_LIMIT_KMH / 3.6
@@ -109,7 +92,7 @@ MASK_Y_MAX = 120.0
 ACTUAL_RADAR_OFFSET= 8.0
 
 WINDOW_NAME = "Traffic Analysis"
-DISPLAY_SCALE = 0.5 # TEMP WINOW
+DISPLAY_SCALE = 0.5 # TEMP WINDOW
 WAIT_KEY_MS = 1
 EXIT_KEY = ord('q')
 
@@ -141,10 +124,8 @@ if __name__ == "__main__":
     fps = cap.get(cv2.CAP_PROP_FPS)
     print(f"FPS: {fps}")
 
-    lat = 54.37163
-    lon = 18.61898
-    Weather = getWeather(lat, lon, date.today(), 12)
-    print(f"{lat,lon}\nDate: {date.today()}, Weather conditions: {Weather.condition} \n{Weather.description}")
+    print(f"{cfg["weather"]["latitude"],cfg["weather"]["longitude"]}\nDate: {cfg["weather"]["date"]}, "
+          f"Weather conditions: {cfg["weather"]["condition"]} \n{cfg["weather"]["description"]}")
 
     frame_time = 1.0 / fps
     cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
@@ -185,7 +166,15 @@ if __name__ == "__main__":
     laneDepartureCooldown: Dict[int, int] = {}
     LANE_DEPARTURE_COOLDOWN_FRAMES = int(3.0 * fps)
 
-    detector = LaneDetector()
+    lines_dick = cfg["lanes"]
+    xLeft = lines_dick["left_line"]["start"][0]
+    xRight = lines_dick["right_line"]["start"][0]
+    road_width_h0_px = abs(xRight - xLeft)
+    detected_lines = [lines_dick["left_line"], lines_dick["right_line"]]
+
+    multiplier = cfg["weather"]["Markiplier"]
+
+    print("Detected lines:", detected_lines)
 
     try:
         while cap.isOpened():
@@ -197,31 +186,10 @@ if __name__ == "__main__":
 
             staleIds = [carId for carId, carObj in carsDict.items() if carObj.lastSeen < frameIndex - 5]
             for carId in staleIds: del carsDict[carId]
-            
-            if frameIndex == 0:
-                # lane detection only if there is none lines.json file
-                if os.path.exists(LINES_JSON_PATH):
-                    with open(LINES_JSON_PATH, 'r') as f:
-                        lines_dick = json.load(f)
-                else:
-                    lines_dick = detector.detect(frame)
-                    with open(LINES_JSON_PATH, 'w') as f:
-                        json.dump(lines_dick, f, indent=4)
-
-                xLeft = lines_dick["left_line"]["start"][0]
-                xRight = lines_dick["right_line"]["start"][0]
-                road_width_h0_px = abs(xRight - xLeft)
-
-                # we are using only left and right lines
-                detected_lines = [lines_dick["left_line"], lines_dick["right_line"]] # converting dictionary into array for easier use
-
-                print("Detected lines:", detected_lines)
-
-
 
             if frameIndex % RADAR_STEP_INTERVAL == 0:
-                radar_setp = frame_time * RADAR_STEP_INTERVAL
-                radar.step(radar_setp)
+                radar_setup = frame_time * RADAR_STEP_INTERVAL
+                radar.step(radar_setup)
                 radar.clusterPoints()
                 # radar.visualizeClusteredStep()
                 clusterCenters = radar.getClusterCenters()
@@ -237,7 +205,7 @@ if __name__ == "__main__":
                 for cluster in clusterCenters:
                     currentDistance: float = abs(cluster['y_corrected'])+ACTUAL_RADAR_OFFSET
                     currentVelocity: float = abs(cluster['radial_velocity'])
-                    stoppingDistance: float = abs(calcStoppingDistance(currentVelocity))
+                    stoppingDistance: float = abs(calcStoppingDistance(currentVelocity, multiplier))
                     print(f"Distance: {currentDistance:.2f}, adjusted with offset {ACTUAL_RADAR_OFFSET:.1f} m")
 
                     if stoppingDistance >= currentDistance:

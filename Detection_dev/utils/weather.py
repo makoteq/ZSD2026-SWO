@@ -14,7 +14,6 @@ ROAD_CONDITION_MULTIPLIER={
     "rain":   1.7,
     "snow":   3,
     "ice":    4,
-
 }
 
 @dataclass
@@ -77,8 +76,7 @@ def getWeather(lat, lon, targetDate, time):
             description="fallback: no data",
         )
 
-def calcStoppingDistance(speed: float) -> float:
-    weatherMarkiplier = getWeather(54.37163, 18.61898, TODAY, 12).multiplier
+def calcStoppingDistance(speed: float, weatherMarkiplier: float = 1.0) -> float:
 
     if weatherMarkiplier == 1:
         reaction_time = 1.5
