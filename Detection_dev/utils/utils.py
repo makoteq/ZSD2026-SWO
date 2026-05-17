@@ -3,7 +3,6 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple, Dict, Any, Final
-from .car import position, velocity
 
 
 TRACK_COLOR: Final[Tuple[int, int, int]] = (0, 255, 0)
@@ -19,86 +18,29 @@ def drawCustomBox(
     conf: float,
     x: float,
     y: float,
-    cameraDistance: float,
     speed: float,
     stoppingDistance: float,
 ) -> None:
     x1, y1, x2, y2 = map(int, boxXyxy)
     
-    line1 = f"CAR ID:{trackId} | {conf:.2f}"
-    line2 = f"x: {x:.1f}m y: {y:.1f}m | v: {speed:.1f}m/s"
-    line3 = f"camera distance: {cameraDistance:.2f}m, stopping distance: {stoppingDistance:.2f}"
-
     cv2.rectangle(annotatedFrame, (x1, y1), (x2, y2), BBOX_COLOR, LINE_THICKNESS)
 
     font = cv2.FONT_HERSHEY_SIMPLEX
-    lineHeight = int(20 * FONT_SCALE + 10)
-    bgWidth = 180
-    bgHeight = lineHeight * 3 + 5
+    label = f"CAR ID:{trackId}"
+    label_scale = FONT_SCALE
+    label_thickness = FONT_THICKNESS
+    (label_width, label_height), _ = cv2.getTextSize(label, font, label_scale, label_thickness)
+    label_x1 = x1 + 2
+    label_y1 = y1 + 2
+    label_x2 = min(x2, label_x1 + label_width + 4)
+    label_y2 = min(y2, label_y1 + label_height + 4)
 
-    cv2.rectangle(annotatedFrame, (x1, y1 - bgHeight), (x1 + bgWidth, y1), BBOX_COLOR, -1)
+    if label_x2 > label_x1 and label_y2 > label_y1:
+        cv2.rectangle(annotatedFrame, (label_x1, label_y1), (label_x2, label_y2), BBOX_COLOR, -1)
+        text_x = label_x1 + 2
+        text_y = label_y1 + label_height + 1
+        cv2.putText(annotatedFrame, label, (text_x, text_y), font, label_scale, (0, 0, 0), label_thickness)
 
-    cv2.putText(annotatedFrame, line1, (x1 + 5, y1 - (lineHeight * 2) - 5), font, FONT_SCALE, (0, 0, 0), FONT_THICKNESS)
-    cv2.putText(annotatedFrame, line2, (x1 + 5, y1 - lineHeight - 5), font, FONT_SCALE, (0, 0, 0), FONT_THICKNESS)
-    cv2.putText(annotatedFrame, line3, (x1 + 5, y1 - 5), font, FONT_SCALE, (0, 0, 0), FONT_THICKNESS)
-
-from typing import Dict, List, Any, Final, Tuple
-
-MATCH_THRESHOLD_Y: Final[float] = 20.0
-
-def matchClustersToCars(carsDict: Dict[int, Any], clusterCenters: List[Dict[str, Any]], frameIndex: int) -> float:
-    allDistances: List[Tuple[float, int, int]] = []
-
-    for carId, car in carsDict.items():
-        if not car.pos:
-            continue
-        
-        latestYolo = car.pos[-1]
-        for clusterIdx, cluster in enumerate(clusterCenters):
-            yCorr = cluster.get('y_corrected')
-            if yCorr is None:
-                continue
-
-            distY = abs(latestYolo.y - yCorr)
-            
-            if distY <= MATCH_THRESHOLD_Y:
-                allDistances.append((distY, carId, clusterIdx))
-
-    allDistances.sort(key=lambda x: x[0])
-
-    usedCars: set[int] = set()
-    usedClusters: set[int] = set()
-    lastDist: float = 0.0
-    carMap: Dict[int, int] = {}
-
-    for dist, carId, clusterIdx in allDistances:
-        if carId in usedCars or clusterIdx in usedClusters:
-            continue
-
-        cluster = clusterCenters[clusterIdx]
-        
-        valX = cluster.get('x_corrected')
-        valY = cluster.get('y_corrected')
-        valV = cluster.get('radial_velocity')
-
-        if valX is None or valY is None or valV is None:
-            continue
-
-        car = carsDict[carId]
-        radarX = float(valX)
-        radarY = float(valY)
-        radarV = float(valV)
-
-        car.radarPos.append(position(x=radarX, y=radarY, frame=frameIndex))
-        car.radarVel.append(velocity(v=radarV, frame=frameIndex))
-
-        usedCars.add(carId)
-        usedClusters.add(clusterIdx)
-        lastDist = dist
-        carMap[clusterIdx] = carId
-
-    return lastDist, carMap
-        
 import cv2
 import numpy as np
 from typing import List, Dict, Tuple, Any, Callable

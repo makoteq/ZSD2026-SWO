@@ -88,7 +88,6 @@ class Car:
         self.imgSize = 0.0
         self.radar = None
 
-        self.cameraDistance = 99.0
 
         self.wasInsideLane: Union[bool, None] = None
         self.isOutsideLane = False
@@ -235,7 +234,6 @@ class Car:
         self.radar = radar
 
         rawX, rawY = self.calcPosition(detectedLines, roadWidthH0Px)
-        self.cameraDistance = self.calcDistance(detectedLines, roadWidthH0Px, ROAD_WIDTH_METERS)
         currentV = float(self.velo[-1].v)
 
         realW, realH = self.getSize(detectedLines, roadWidthH0Px)

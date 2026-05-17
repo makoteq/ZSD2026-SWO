@@ -19,7 +19,7 @@ from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
 from utils.depth_v2 import DepthV2, loadOrComputeDepthMap, rankCarsByDepth, flattenRowsMedianBackground, saveDepthVisualization
 from datetime import date
 from utils.weather import calcStoppingDistance, getWeather
-from utils.utils import detectOvertaking, drawCustomBox, plotRadarComparison, matchClustersToCars, save_car_to_csv, \
+from utils.utils import detectOvertaking, drawCustomBox, plotRadarComparison, save_car_to_csv, \
     plotYOffsetCorrelation
 from utils.alarm_manager import AlarmManager
 from batch_runner import (
@@ -356,9 +356,7 @@ def run_single_recording(
                         )
 
                 if debug_visuals:
-                    plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters, frameIndex, currentTime)
-                dist = matchClustersToCars(carsDict, clusterCenters, frameIndex)
-                print(dist)
+                    pass
 
             results = model.track(
                 source=frame,
@@ -425,7 +423,6 @@ def run_single_recording(
                         conf,
                         car.pos[-1].x,
                         car.pos[-1].y,
-                        car.cameraDistance,
                         car.velo[-1].v,
                         car.stoppingDistance[-1].distance,
                     )
@@ -466,8 +463,8 @@ def run_single_recording(
                                     laneDepartureCooldown[trackId] = frameIndex
                     # --- END LANE DEPARTURE WATCHDOG ---
 
-                    points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
-                    cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
+                    # points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
+                    # cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
 
                 # OVERTAKING
 
@@ -494,7 +491,7 @@ def run_single_recording(
                         if frameIndex - overtakeCooldown.get(pair, -OVERTAKE_COOLDOWN_FRAMES) >= OVERTAKE_COOLDOWN_FRAMES:
                             msg = f"[OVERTAKE] Frame {frameIndex}: Car {overtaker} overtook Car {overtaken}"
                             print(msg) #debug print
-                            alarm_tracker.trigger(1, msg, 0.0, currentTime)
+                            alarm_tracker.trigger(1, 'overtake', 0.0, currentTime)
                             overtakeCooldown[pair] = frameIndex
 
                 prevZoneRanking = currentZoneRanking
