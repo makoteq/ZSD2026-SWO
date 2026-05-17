@@ -2,7 +2,6 @@ import os
 import json
 import torch
 import cv2
-import numpy as np
 from ultralytics import YOLO
 from typing import Dict
 from typing import Final, List
@@ -12,7 +11,7 @@ from utils.car import Car
 from utils.radar import Radar
 from utils.depth_v2 import loadOrComputeDepthMap, rankCarsByDepth, flattenRowsMedianBackground, saveDepthVisualization
 from utils.weather import calcStoppingDistance
-from utils.utils import detectOvertaking, drawCustomBox, plotRadarComparison, matchClustersToCars, save_car_to_csv
+from utils.utils import detectOvertaking, drawCustomBox, save_car_to_csv
 from utils.alarm_manager import AlarmManager
 
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
@@ -90,6 +89,7 @@ MASK_Y_MIN = 0.0
 MASK_Y_MAX = 120.0
 
 ACTUAL_RADAR_OFFSET= 8.0
+RADAR_DEBUG = True
 
 WINDOW_NAME = "Traffic Analysis"
 DISPLAY_SCALE = 0.5 # TEMP WINDOW
@@ -116,10 +116,12 @@ if __name__ == "__main__":
         exit(1)
     print(f"Radar delay: {RADAR_DELAY}")
     radar: Radar = Radar(RADAR_CSV_PATH, START_TIME + RADAR_DELAY)
+    radar.debug = RADAR_DEBUG
     radar.applyMask(MASK_Z_MIN, MASK_Z_MAX, MASK_Y_MIN, MASK_Y_MAX)
     radar.addNoise()
     radar.findLane()
-    radar.visualize()
+    if RADAR_DEBUG:
+        radar.visualize()
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     print(f"FPS: {fps}")
@@ -197,16 +199,18 @@ if __name__ == "__main__":
                 # trigger when first ccluster enter overtaking zone
                 if clusterCenters:
                     closestRadarCluster = min(clusterCenters, key=lambda c: abs(c['y_corrected']))
-                    closestRadarDistance = abs(closestRadarCluster['y_corrected'])
+                    closestRadarDistance = abs(closestRadarCluster['y_corrected']) - ACTUAL_RADAR_OFFSET
 
                     if closestRadarDistance <= OVERTAKING_LINE_THRESHOLD and overtakingLineY is None:
                         overtakingLineTriggered = True
 
                 for cluster in clusterCenters:
-                    currentDistance: float = abs(cluster['y_corrected'])+ACTUAL_RADAR_OFFSET
+                    currentDistance: float = abs(cluster['y_corrected']) -ACTUAL_RADAR_OFFSET
                     currentVelocity: float = abs(cluster['radial_velocity'])
                     stoppingDistance: float = abs(calcStoppingDistance(currentVelocity, multiplier))
                     print(f"Distance: {currentDistance:.2f}, adjusted with offset {ACTUAL_RADAR_OFFSET:.1f} m")
+                    if RADAR_DEBUG:
+                        print(f"Distance: {currentDistance:.2f}, adjusted with offset {ACTUAL_RADAR_OFFSET:.1f} m")
 
                     if stoppingDistance >= currentDistance:
                         alarm_manager.trigger(2,f"Detected vehicle won't be able to stop in time {stoppingDistance:.1f}m > {currentDistance:.1f}m",
@@ -216,32 +220,29 @@ if __name__ == "__main__":
                                               currentTime)
                 #TODO przkeorczenuie prędkosci 
 
-                plotRadarComparison(radar.minX, radar.maxX, 0, radar.maxY, carsDict, clusterCenters, frameIndex, currentTime)
-                dist  = matchClustersToCars(carsDict, clusterCenters, frameIndex)
-                print(dist)
                 
             results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
             annotatedFrame = frame.copy()
 
-            LANE_LINE_COLOR = (0, 200, 255)
-            LANE_LINE_THICKNESS = 2
-            y_top = 0
-            y_bottom = frameHeight - 1
-            for line in detected_lines:
-                m = line.get('m')
-                b = line.get('b')
-                if m is None or b is None:
-                    continue
+            # LANE_LINE_COLOR = (0, 200, 255)
+            # LANE_LINE_THICKNESS = 2
+            # y_top = 0
+            # y_bottom = frameHeight - 1
+            # for line in detected_lines:
+            #     m = line.get('m')
+            #     b = line.get('b')
+            #     if m is None or b is None:
+            #         continue
 
-                x_top = int((m * y_top) + b)
-                x_bottom = int((m * y_bottom) + b)
-                cv2.line(
-                    annotatedFrame,
-                    (x_top, y_top),
-                    (x_bottom, y_bottom),
-                    LANE_LINE_COLOR,
-                    LANE_LINE_THICKNESS,
-                )
+            #     x_top = int((m * y_top) + b)
+            #     x_bottom = int((m * y_bottom) + b)
+            #     cv2.line(
+            #         annotatedFrame,
+            #         (x_top, y_top),
+            #         (x_bottom, y_bottom),
+            #         LANE_LINE_COLOR,
+            #         LANE_LINE_THICKNESS,
+            #     )
 
 
 
@@ -271,8 +272,16 @@ if __name__ == "__main__":
                         correctionFunc
                     )
 
-                    drawCustomBox(annotatedFrame, boxXyxy, trackId, conf, car.pos[-1].x, car.pos[-1].y,car.cameraDistance,
-                                  car.velo[-1].v, car.stoppingDistance[-1].distance,)
+                    drawCustomBox(
+                        annotatedFrame,
+                        boxXyxy,
+                        trackId,
+                        conf,
+                        car.pos[-1].x,
+                        car.pos[-1].y,
+                        car.velo[-1].v,
+                        car.stoppingDistance[-1].distance,
+                    )
 
                     save_car_to_csv(car, trackId, frameIndex, CSV_PATH)
 
@@ -303,8 +312,8 @@ if __name__ == "__main__":
                                     laneDepartureCooldown[trackId] = frameIndex
                     # --- END LANE DEPARTURE WATCHDOG ---
 
-                    points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
-                    cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
+                    # points = np.array(car.history).astype(np.int32).reshape((-1, 1, 2))
+                    # cv2.polylines(annotatedFrame, [points], False, TRACK_COLOR, LINE_THICKNESS)
 
 
                 # OVERTAKING
@@ -338,8 +347,8 @@ if __name__ == "__main__":
                 prevZoneRanking = currentZoneRanking
 
             # overtaking line visualization 
-            if overtakingLineY is not None:
-                cv2.line(annotatedFrame, (0, overtakingLineY), (frameWidth, overtakingLineY), (0, 255, 255), 2)
+            # if overtakingLineY is not None:
+            #     cv2.line(annotatedFrame, (0, overtakingLineY), (frameWidth, overtakingLineY), (0, 255, 255), 2)
 
             cv2.putText(annotatedFrame, f"Frame: {frameIndex}", (TEXT_POSITION_X, TEXT_POSITION_Y_START), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
             cv2.putText(annotatedFrame, f"Time: {currentTime:.2f}s", (TEXT_POSITION_X, TEXT_POSITION_Y_START + TEXT_LINE_SPACING), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)

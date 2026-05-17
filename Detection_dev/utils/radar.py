@@ -65,7 +65,8 @@ TIME_STEP_DEFAULT = 0.5
 class Radar:
     def __init__(self, relativePath: str, start_time: float) -> None:
         self.relativePath: str = relativePath
-        self.pointsSwap: pd.DataFrame = pd.DataFrame()
+        self.pointsSwap: np.ndarray = np.empty((0, 4), dtype=float)
+        self.pointsSwapLabels: np.ndarray = np.empty((0,), dtype=int)
         self.currentTime: float = INITIAL_TIME_VALUE
         self.lane_width_meters: float = 0.0
         self.t0: float = start_time
@@ -74,8 +75,12 @@ class Radar:
         self.minY: float = 0.0
         self.maxY: float = 0.0
         self.clusterCenters: List[Dict[str, float]] = []
+        self._timeValues: np.ndarray = np.empty((0,), dtype=float)
+        self._pointsValues: np.ndarray = np.empty((0, 4), dtype=float)
+        self.debug: bool = False
         self.loadData()
         self.adjustPoints(SENSOR_PITCH_DEG, SENSOR_YAW_DEG, SENSOR_ROLL_DEG, CAMERA_HEIGHT_OFFSET)
+        self._refresh_cache()
         
    
     def loadData(self) -> None:
@@ -84,35 +89,50 @@ class Radar:
         if not os.path.exists(self.csvPath):
             raise FileNotFoundError(f"File not found: {self.csvPath}")
         self.dataFrame: pd.DataFrame = pd.read_csv(self.csvPath)
+        self.dataFrame.sort_values(COLUMN_TIME, inplace=True)
+        self.dataFrame.reset_index(drop=True, inplace=True)
+
+    def _refresh_cache(self) -> None:
+        if self.dataFrame.empty:
+            self._timeValues = np.empty((0,), dtype=float)
+            self._pointsValues = np.empty((0, 4), dtype=float)
+            return
+        self._timeValues = self.dataFrame[COLUMN_TIME].to_numpy()
+        self._pointsValues = self.dataFrame[[X_COLUMN, Y_COLUMN, Z_COLUMN, COLUMN_VELOCITY]].to_numpy()
 
     def step(self, timeStep: float) -> None:
-        self.pointsSwap = pd.DataFrame()
+        self.pointsSwap = np.empty((0, 4), dtype=float)
+        self.pointsSwapLabels = np.empty((0,), dtype=int)
+        if self._timeValues.size == 0:
+            return
         endTime: float = self.currentTime + timeStep
-        print(f"Processing time step: {self.currentTime:.2f}s to {endTime:.2f}s")
-        mask = (self.dataFrame[COLUMN_TIME] >= self.currentTime) & (self.dataFrame[COLUMN_TIME] < endTime)
-        self.pointsSwap = self.dataFrame[mask].copy()
-        self.currentTime += timeStep
+        if self.debug:
+            print(f"Processing time step: {self.currentTime:.2f}s to {endTime:.2f}s")
+        start_idx = np.searchsorted(self._timeValues, self.currentTime, side="left")
+        end_idx = np.searchsorted(self._timeValues, endTime, side="left")
+        if end_idx > start_idx:
+            self.pointsSwap = self._pointsValues[start_idx:end_idx]
+        self.currentTime = endTime
 
     def clusterPoints(self) -> None:
-        if self.pointsSwap.empty:
+        if self.pointsSwap.size == 0:
             return
-        
-        rawFeatures: np.ndarray = self.pointsSwap[[X_COLUMN, Y_COLUMN, Z_COLUMN, COLUMN_VELOCITY]].values
-        
+
         scalingWeights: np.ndarray = np.array([
-            CLUSTER_SCALE_X, 
-            CLUSTER_SCALE_Y, 
-            CLUSTER_SCALE_Z, 
-            CLUSTER_SCALE_VELOCITY
+            CLUSTER_SCALE_X,
+            CLUSTER_SCALE_Y,
+            CLUSTER_SCALE_Z,
+            CLUSTER_SCALE_VELOCITY,
         ])
-        
-        scaledFeatures: np.ndarray = rawFeatures * scalingWeights
-        
+
+        scaledFeatures: np.ndarray = self.pointsSwap * scalingWeights
+
         dbscan: DBSCAN = DBSCAN(eps=CLUSTER_EPS, min_samples=CLUSTER_MIN_SAMPLES)
         labels = dbscan.fit_predict(scaledFeatures)
-        
-        self.pointsSwap[CLUSTER_COLUMN] = labels
-        self.pointsSwap = self.pointsSwap[self.pointsSwap[CLUSTER_COLUMN] != -1].copy()
+
+        valid_mask = labels != -1
+        self.pointsSwap = self.pointsSwap[valid_mask]
+        self.pointsSwapLabels = labels[valid_mask]
 
     def visualizeClusteredStep(self) -> None:
         if self.dataFrame.empty:
@@ -129,18 +149,18 @@ class Radar:
         ax.plot([self.maxX, self.maxX], [self.minY, self.maxY], [groundZ, groundZ], color=LINE_COLOR, linewidth=LINE_WIDTH_VIS, label="Right Boundary")
         ax.plot([midX, midX], [self.minY, self.maxY], [groundZ, groundZ], color=CENTERLINE_COLOR, linestyle="--", linewidth=LINE_WIDTH_VIS, label="Centerline")
 
-        if not self.pointsSwap.empty:
-            uniqueClusters: np.ndarray = self.pointsSwap[CLUSTER_COLUMN].unique()
+        if self.pointsSwap.size != 0:
+            uniqueClusters: np.ndarray = np.unique(self.pointsSwapLabels)
             colors = plt.cm.get_cmap(COLOR_MAP, max(len(uniqueClusters), 1))
 
             for i, clusterId in enumerate(uniqueClusters):
-                clusterMask = self.pointsSwap[CLUSTER_COLUMN] == clusterId
-                clusterData: pd.DataFrame = self.pointsSwap[clusterMask]
-                
+                clusterMask = self.pointsSwapLabels == clusterId
+                clusterData: np.ndarray = self.pointsSwap[clusterMask]
+
                 ax.scatter(
-                    clusterData[X_COLUMN], 
-                    clusterData[Y_COLUMN], 
-                    clusterData[Z_COLUMN],
+                    clusterData[:, 0],
+                    clusterData[:, 1],
+                    clusterData[:, 2],
                     s=POINT_SIZE,
                     alpha=OPACITY_LEVEL,
                     color=colors(i),
@@ -268,7 +288,8 @@ class Radar:
         pitchRad: float = np.radians(-pitch)
         yawRad: float = np.radians(-self.calculateYaw())
         rollRad: float = np.radians(-self.calculateRoll())
-        print(f"Calculated Yaw: {np.degrees(yawRad):.2f} degrees, Calculated Roll: {np.degrees(rollRad):.2f} degrees")
+        if self.debug:
+            print(f"Calculated Yaw: {np.degrees(yawRad):.2f} degrees, Calculated Roll: {np.degrees(rollRad):.2f} degrees")
         cosP, sinP = np.cos(pitchRad), np.sin(pitchRad)
         cosY, sinY = np.cos(yawRad), np.sin(yawRad)
         cosR, sinR = np.cos(rollRad), np.sin(rollRad)
@@ -282,6 +303,7 @@ class Radar:
         self.dataFrame[X_COLUMN] = x2
         self.dataFrame[Y_COLUMN] = y1 * cosR - z2 * sinR
         self.dataFrame[Z_COLUMN] = (y1 * sinR + z2 * cosR) + heightOffset
+        self._refresh_cache()
 
     def applyMask(self, zMin: float, zMax: float, yMin: float, yMax: float) -> None:
         self.dataFrame = self.dataFrame[
@@ -292,6 +314,7 @@ class Radar:
         
         if not self.dataFrame.empty:
             self.currentTime = self.t0
+        self._refresh_cache()
 
     def addNoise(self) -> None:
         if self.dataFrame.empty:
@@ -322,19 +345,24 @@ class Radar:
 
         if MAX_VELOCITY_ERROR > 0:
             self.dataFrame[COLUMN_VELOCITY] = v + np.random.uniform(-MAX_VELOCITY_ERROR, MAX_VELOCITY_ERROR, size=len(v))
+        self._refresh_cache()
 
     def getClusterCenters(self) -> List[Dict[str, float]]:
-            if self.pointsSwap.empty:
-                return []
+        if self.pointsSwap.size == 0:
+            return []
 
-            clusterGroups = self.pointsSwap.groupby(CLUSTER_COLUMN)
-            
-            centersDf: pd.DataFrame = clusterGroups.agg({
-                X_COLUMN: 'mean',
-                Y_COLUMN: 'mean',
-                Z_COLUMN: 'mean',
-                COLUMN_VELOCITY: lambda x: x.mean() * -1
-            }).reset_index()
+        centers: List[Dict[str, float]] = []
+        for clusterId in np.unique(self.pointsSwapLabels):
+            mask = self.pointsSwapLabels == clusterId
+            clusterData = self.pointsSwap[mask]
+            if clusterData.size == 0:
+                continue
+            centers.append({
+                X_COLUMN: float(clusterData[:, 0].mean()),
+                Y_COLUMN: float(clusterData[:, 1].mean()),
+                Z_COLUMN: float(clusterData[:, 2].mean()),
+                COLUMN_VELOCITY: float(clusterData[:, 3].mean() * -1),
+            })
 
-            self.clusterCenters = centersDf.to_dict(orient='records')
-            return self.clusterCenters
+        self.clusterCenters = centers
+        return self.clusterCenters
