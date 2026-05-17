@@ -232,13 +232,13 @@ if __name__ == "__main__":
                 # trigger when first ccluster enter overtaking zone
                 if clusterCenters:
                     closestRadarCluster = min(clusterCenters, key=lambda c: abs(c['y_corrected']))
-                    closestRadarDistance = abs(closestRadarCluster['y_corrected'])
+                    closestRadarDistance = abs(closestRadarCluster['y_corrected']) - ACTUAL_RADAR_OFFSET
 
                     if closestRadarDistance <= OVERTAKING_LINE_THRESHOLD and overtakingLineY is None:
                         overtakingLineTriggered = True
 
                 for cluster in clusterCenters:
-                    currentDistance: float = abs(cluster['y_corrected'])+ACTUAL_RADAR_OFFSET
+                    currentDistance: float = abs(cluster['y_corrected']) -ACTUAL_RADAR_OFFSET
                     currentVelocity: float = abs(cluster['radial_velocity'])
                     stoppingDistance: float = abs(calcStoppingDistance(currentVelocity))
                     if RADAR_DEBUG:
