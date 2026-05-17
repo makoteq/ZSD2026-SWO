@@ -27,13 +27,13 @@ CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 SCENARIO = "output"
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 
-# # Control
+# Control
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.mp4")
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
 
 # seb new overtaking
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/new_overtaking/1_overtaking/1_overtaking.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/new_overtaking/1_overtaking/1_overtaking--6.5.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "new_overtaking/1_overtaking/1_overtaking.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "new_overtaking/1_overtaking/1_overtaking--6.5.csv")
 
 # # seb new double overtaking
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/new_overtaking/1_overtaking_double/1_overtaking_double.mp4")
@@ -76,7 +76,6 @@ LINES_JSON_PATH = os.path.join(DATA_DIR, SCENARIO, "lines.json") # always delete
 # yolo
 ROAD_WIDTH_METERS = 7.0
 FOV = 20.0
-ACTUAL_OFFSET= 0.0
 
 START_TIME = 0.0
 RADAR_DELAY = 0.0
@@ -101,12 +100,13 @@ SPEED_LIMIT_KMH: Final[float] = 60.0
 SPEED_LIMIT: Final[float] = SPEED_LIMIT_KMH / 3.6
 
 # radar
-RADAR_STEP_INTERVAL = 5
+RADAR_STEP_INTERVAL = 10
 MASK_Z_MIN = 30.0
 MASK_Z_MAX = 100.0
 MASK_Y_MIN = 0.0
 MASK_Y_MAX = 120.0
 
+ACTUAL_RADAR_OFFSET= 8.0
 
 WINDOW_NAME = "Traffic Analysis"
 DISPLAY_SCALE = 0.5 # TEMP WINOW
@@ -233,10 +233,10 @@ if __name__ == "__main__":
                         overtakingLineTriggered = True
 
                 for cluster in clusterCenters:
-                    currentDistance: float = abs(cluster['y_corrected'])
+                    currentDistance: float = abs(cluster['y_corrected'])+ACTUAL_RADAR_OFFSET
                     currentVelocity: float = abs(cluster['radial_velocity'])
                     stoppingDistance: float = abs(calcStoppingDistance(currentVelocity))
-                    print(f"Distance: {currentDistance:.2f} m")
+                    print(f"Distance: {currentDistance:.2f}, adjusted with offset {ACTUAL_RADAR_OFFSET:.1f} m")
 
                     if stoppingDistance >= currentDistance:
                         alarm_manager.trigger(2,f"Detected vehicle won't be able to stop in time {stoppingDistance:.1f}m > {currentDistance:.1f}m",
