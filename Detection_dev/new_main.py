@@ -1,7 +1,9 @@
 import os
+import sys
 import json
 import torch
 import cv2
+import subprocess
 from ultralytics import YOLO
 from typing import Dict
 from typing import Final, List
@@ -19,6 +21,9 @@ SCENARIO = "output"
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 
 CONFIG_JSON_PATH = os.path.join(DATA_DIR, "config", "config.json")
+if not os.path.exists(CONFIG_JSON_PATH):
+    print("config.json not found")
+    subprocess.run([sys.executable, os.path.join(CURRENT_SCRIPT_PATH, "setup.py")], check=True)
 
 with open(CONFIG_JSON_PATH, 'r', encoding='utf-8') as f:
     cfg = json.load(f)
@@ -218,7 +223,7 @@ if __name__ == "__main__":
                     elif currentVelocity > SPEED_LIMIT:
                         alarm_manager.trigger(1, f"Speed limit exceeded by cluster: {currentVelocity:.1f} m/s", 0.0,
                                               currentTime)
-                #TODO przkeorczenuie prędkosci 
+                #TODO przkeorczenuie prędkosci
 
                 
             results = model.track(source=frame, imgsz=IMGSZ, conf=CONF_THRESHOLD,persist=True, verbose=False, device=0 if device == 'cuda' else 'cpu',tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS) 
