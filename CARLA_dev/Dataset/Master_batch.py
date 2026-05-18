@@ -4,34 +4,41 @@ import cv2
 import numpy as np
 import csv
 import time
-import random
-import json
 import traceback
+import threading
+import subprocess
 from datetime import datetime
+import shutil
+import json
 
 import s_single_speeding
-import s_pull_over
+import single_not_speeding
+import s_normal_trafic
 import s_overtake
-import s_normal_traffic
-import s_overtake_legal
-import s_speeding_legal
+import s_overtake_c
+import s_overtake_ac
+import s_overtake_a
+
+import s_pull_over
+import s_pull_over_ab
+import s_overtake_double
 
 run_start_sim_time = 0.0
 # sensor loc
 # todo remove const and add random
 SENSOR_X = 181.0
 SENSOR_Y = 107.0
-SENSOR_Z = 6.0
+SENSOR_Z = 5.5
 SENSOR_YAW = 180.0
 # SENSOR_PITCH = -5.0
 # can and radaar params
 # ---------------------------------------
 CAMERA_Y = 107.0
-CAMERA_PITCH = -12.0
+CAMERA_PITCH = -18.0
 CAMERA_FOV = 20.0
 
 RADAR_Y = 107.0
-RADAR_PITCH = -8.0
+RADAR_PITCHES = [-6.0]
 # ---------------------------------------
 # debug lines                #todo find a better way to disp them
 DRAW_DEBUG_LINES = True
@@ -52,11 +59,11 @@ SCENARIOS_TO_RUN = [
     # ("lane_change", scenario_lane_change, "Lane Change"),
     #("overtaking", s_overtake, "Overtaking"),
     #("overtaking_legal", s_overtake_legal, "Overtaking Legal"),
-    ("speeding_legal", s_speeding_legal, "Speeding Legal"),
     # anomalys:
     # ("pull_over", s_pull_over, "Pull Over To Shoulder"),
+    ("AC", s_overtake_ac, "AC"),
 ]
-SAMPLES_PER_SCENARIO = 5
+SAMPLES_PER_SCENARIO = 2
 RECORD_DURATION_SEC = 30.0  # for normal traffic only
 # weather -----------------------------------------------------------------------------
 WEATHER_PRESETS = {
@@ -95,7 +102,7 @@ RADAR_PRESETS = {
     "TRUGRD_LR_like": {
         "horizontal_fov": "18.0",
         "vertical_fov": "6.0",
-        "range": "500.0",
+        "range": "200.0",
         "points_per_second": "14000",
         "sensor_tick": "0.05",
     }
@@ -112,6 +119,17 @@ output_dir = None
 video_path = None
 radar_log_path = None
 session_log_path = None
+
+
+
+_rec_lock = threading.Lock()
+_recording_active = False
+
+camera_frame_dir = None
+camera_frame_idx = 0
+camera_first_ts = None
+camera_last_ts = None
+CAMERA_JPEG_QUALITY = 95
 
 
 # -----------------------------------------------------------------------------------------
@@ -172,6 +190,8 @@ def weather_for_run(global_run_idx: int):
 def start_recording(run_dir: str):
     global video_writer, radar_csv_file, radar_csv_writer
     global output_dir, video_path, radar_log_path
+    global camera_frame_dir, camera_frame_idx, camera_first_ts, camera_last_ts
+    global run_start_sim_time
 
     stop_recording()
 
@@ -180,6 +200,12 @@ def start_recording(run_dir: str):
 
     radar_log_path = os.path.join(output_dir, "radar_points_world.csv")
     video_path = os.path.join(output_dir, "rgb.mp4")
+
+    camera_frame_dir = os.path.join(output_dir, "frames")
+    os.makedirs(camera_frame_dir, exist_ok=True)
+    camera_frame_idx = 0
+    camera_first_ts = None
+    camera_last_ts = None
 
     radar_csv_file = open(radar_log_path, "w", newline="", encoding="utf-8")
     radar_csv_writer = csv.writer(radar_csv_file)
@@ -191,11 +217,14 @@ def start_recording(run_dir: str):
     ])
 
     video_writer = None
+    run_start_sim_time = None
 
 
 def stop_recording():
     global video_writer, radar_csv_file, radar_csv_writer
     global output_dir, video_path, radar_log_path
+    global camera_frame_dir, camera_frame_idx, camera_first_ts, camera_last_ts
+    global run_start_sim_time
 
     if radar_csv_file is not None:
         try:
@@ -216,67 +245,135 @@ def stop_recording():
     video_path = None
     radar_log_path = None
 
+    camera_frame_dir = None
+    camera_frame_idx = 0
+    camera_first_ts = None
+    camera_last_ts = None
+
+    run_start_sim_time = None
+
+
+def finalize_recording(run_dir: str):
+    global camera_frame_dir, camera_frame_idx, camera_first_ts, camera_last_ts
+
+    frame_dir = camera_frame_dir
+    frame_count = camera_frame_idx
+    first_ts = camera_first_ts
+    last_ts = camera_last_ts
+
+    if not frame_dir or frame_count == 0:
+        print("No frames saved.")
+        return
+
+    duration = 0.0
+    if first_ts is not None and last_ts is not None:
+        duration = last_ts - first_ts
+
+    if duration > 0.0 and frame_count > 1:
+        fps = (frame_count - 1) / duration
+    else:
+        fps = 1.0 / CAMERA_TICK
+
+    if fps <= 0.0:
+        fps = 1.0 / CAMERA_TICK
+
+    out_path = os.path.join(run_dir, "rgb.mp4")
+    in_pattern = os.path.join(frame_dir, "%06d.jpg")
+
+    #assemble the frames with ffmpeg
+    cmd = (
+        f'ffmpeg -y -framerate {fps:.6f} -i "{in_pattern}" '
+        f'-c:v libx264 -pix_fmt yuv420p "{out_path}"'
+    )
+
+    try:
+        subprocess.run(cmd, check=True, shell=True)
+        print(f"Mp4 finalized in: {out_path} | fps={fps:.3f} | frames={frame_count}")
+    except FileNotFoundError:
+        print("no ffpmeg in path.")
+    except subprocess.CalledProcessError as e:
+        print(f"idk what error this is {e}")
+
 
 # callbacks for radar and camera ----------------------------------------------------------------
 
-def radar_callback(sensor_data):
-    global radar_actor, radar_csv_writer, run_start_sim_time
-    if radar_csv_writer is None or radar_actor is None:
-        return
+#for data synchronization
+def _get_or_set_start_time(sim_timestamp: float):
+    global run_start_sim_time
+    t0 = run_start_sim_time
+    if t0 is not None:
+        return sim_timestamp - t0
+    with _rec_lock:
+        if run_start_sim_time is None:
+            run_start_sim_time = sim_timestamp
+        return sim_timestamp - run_start_sim_time
 
-    ts_abs = float(sensor_data.timestamp)
-    ts_run = ts_abs - run_start_sim_time if run_start_sim_time is not None else 0.0
 
-    points = np.frombuffer(sensor_data.raw_data, dtype=np.float32).reshape((len(sensor_data), 4))
-    vel = points[:, 0]
-    az = points[:, 1]
-    alt = points[:, 2]
-    depth = points[:, 3]
+def radar_callback_builder(pitch, radar_actor_ref):
+    def radar_callback(sensor_data):
+        global radar_csv_writer, run_start_sim_time, _recording_active
+        if radar_csv_writer is None or radar_actor_ref[0] is None or not _recording_active:
+            return
 
-    x = depth * np.cos(alt) * np.sin(az)
-    y = depth * np.cos(alt) * np.cos(az)
-    z = depth * np.sin(alt)
+        ts_run = _get_or_set_start_time(float(sensor_data.timestamp))
 
-    transform = radar_actor.get_transform()
+        points = np.frombuffer(sensor_data.raw_data, dtype=np.float32).reshape((len(sensor_data), 4))
+        vel = points[:, 0]
+        az = points[:, 1]
+        alt = points[:, 2]
+        depth = points[:, 3]
 
-    rows = []
-    for i in range(len(points)):
-        loc = carla.Location(x=float(x[i]), y=float(y[i]), z=float(z[i]))
-        world_loc = transform.transform(loc)
-        rows.append([
-            ts_run, int(sensor_data.frame),
-            float(vel[i]), float(az[i]), float(alt[i]), float(depth[i]),
-            float(x[i]), float(y[i]), float(z[i]),
-            float(world_loc.x), float(world_loc.y), float(world_loc.z)
-        ])
+        x = depth * np.cos(alt) * np.sin(az)
+        y = depth * np.cos(alt) * np.cos(az)
+        z = depth * np.sin(alt)
 
-    try:
-        radar_csv_writer.writerows(rows)
-    except ValueError:
-        return
+        transform = radar_actor_ref[0].get_transform()
+
+        rows = []
+        for i in range(len(points)):
+            loc = carla.Location(x=float(x[i]), y=float(y[i]), z=float(z[i]))
+            world_loc = transform.transform(loc)
+            rows.append([
+                round(ts_run, 6), int(sensor_data.frame),
+                float(vel[i]), float(az[i]), float(alt[i]), float(depth[i]),
+                float(x[i]), float(y[i]), float(z[i]),
+                float(world_loc.x), float(world_loc.y), float(world_loc.z)
+            ])
+
+        try:
+            radar_csv_writer.writerows(rows)
+        except ValueError:
+            return
+
+    return radar_callback
 
 
 def camera_callback(image):
-    global video_writer, video_path
+    global _recording_active
+    global camera_frame_dir, camera_frame_idx, camera_first_ts, camera_last_ts
 
-    if not video_path:
+    if not _recording_active:
         return
+
+    _get_or_set_start_time(float(image.timestamp))
 
     img = np.frombuffer(image.raw_data, dtype=np.uint8)
     img = np.reshape(img, (image.height, image.width, 4))
     bgr = img[:, :, :3].copy()
 
-    if video_writer is None:
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        path = video_path
-        if not path:
+    with _rec_lock:
+        if not _recording_active or not camera_frame_dir:
             return
-        video_writer = cv2.VideoWriter(path, fourcc, VIDEO_FPS, (image.width, image.height))
-        if not video_writer.isOpened():
-            video_writer = None
-            return
+        idx = camera_frame_idx
+        camera_frame_idx += 1
 
-    video_writer.write(bgr)
+        if camera_first_ts is None:
+            camera_first_ts = float(image.timestamp)
+        camera_last_ts = float(image.timestamp)
+
+        fname = os.path.join(camera_frame_dir, f"{idx:06d}.jpg")
+
+    cv2.imwrite(fname, bgr, [int(cv2.IMWRITE_JPEG_QUALITY), CAMERA_JPEG_QUALITY])
 
 
 def safe_callback_wrapper(fn):
@@ -340,8 +437,8 @@ def setup_environment(client):
 
     camera_bp = blueprint_library.find("sensor.camera.rgb")
     camera_bp.set_attribute("fov", str(CAMERA_FOV))
-    camera_bp.set_attribute("image_size_y", "1080")
-    camera_bp.set_attribute("image_size_x", "1920")
+    camera_bp.set_attribute("image_size_y", "1920")
+    camera_bp.set_attribute("image_size_x", "1080")
     camera_bp.set_attribute("sensor_tick", str(CAMERA_TICK))
     camera_bp.set_attribute("bloom_intensity", "0.0")
     camera_bp.set_attribute("exposure_mode", "manual")
@@ -361,32 +458,45 @@ def spawn_sensors_fixed(world, camera_bp, radar_bp):  # todo remove const and ad
         carla.Location(x=SENSOR_X, y=CAMERA_Y, z=SENSOR_Z),
         carla.Rotation(pitch=CAMERA_PITCH, yaw=SENSOR_YAW)
     )
-    rad = carla.Transform(
-        carla.Location(x=SENSOR_X, y=RADAR_Y, z=SENSOR_Z),
-        carla.Rotation(pitch=RADAR_PITCH, yaw=SENSOR_YAW)
-    )
+
+    radars = []
+    for pitch in RADAR_PITCHES:
+        rad = carla.Transform(
+            carla.Location(x=SENSOR_X, y=RADAR_Y, z=SENSOR_Z),
+            carla.Rotation(pitch=pitch, yaw=SENSOR_YAW)
+        )
+        radar = world.spawn_actor(radar_bp, rad)
+        radar_actor_ref = [radar]
+        radar.listen(safe_callback_wrapper(radar_callback_builder(pitch, radar_actor_ref)))
+        radars.append(radar)
 
     camera = world.spawn_actor(camera_bp, cam)
-    radar = world.spawn_actor(radar_bp, rad)
-
-    radar_actor = radar
-    radar.listen(safe_callback_wrapper(radar_callback))
     camera.listen(safe_callback_wrapper(camera_callback))
 
-    return camera, radar, cam, rad
+    radar_actor = radars[0] if radars else None
+
+    return camera, radars, cam
 
 
 # logs -----------------------------------------------------------------------------------
 
 # for saving sensor config to find best param
-def save_sensor_config(run_dir, camera_bp, radar_bp, camera_transform, radar_transform):
+def save_sensor_config(run_dir, camera_bp, radar_bp, camera_transform, radar_transforms):
     manifest_path = os.path.join(run_dir, "sensor_config.json")
+
+    radar_cfgs = []
+    for tf in radar_transforms:
+        radar_cfgs.append({
+            "horizontal_fov": radar_bp.get_attribute("horizontal_fov").as_float(),
+            "vertical_fov": radar_bp.get_attribute("vertical_fov").as_float(),
+            "pitch_deg": float(tf.rotation.pitch),
+        })
 
     data = {
         "radar": {
             "horizontal_fov": radar_bp.get_attribute("horizontal_fov").as_float(),
             "vertical_fov": radar_bp.get_attribute("vertical_fov").as_float(),
-            "pitch_deg": float(radar_transform.rotation.pitch),
+            "pitch_deg": float(radar_transforms[0].rotation.pitch) if radar_transforms else 0.0,
         },
         "camera": {
             "fov": camera_bp.get_attribute("fov").as_float(),
@@ -421,11 +531,6 @@ def init_batch_output():
             "run_dir",
             "weather_tag",
             "weather_name",
-            "radar_profile",
-            "sensor_x",
-            "sensor_y",
-            "sensor_z",
-            "sensor_yaw",
             "duration_sec",
             "status",
             "error"
@@ -445,7 +550,7 @@ def main():
     client.set_timeout(20.0)
 
     camera = None
-    radar = None
+    radars = []
 
     try:
         world, blueprint_library, camera_bp, radar_bp = setup_environment(client)
@@ -484,7 +589,7 @@ def main():
                     safe_destroy_vehicles_batch(world, client)
 
                     camera = None
-                    radar = None
+                    radars = []
 
                     run_start_sim_time = None
                     stop_recording()
@@ -496,13 +601,19 @@ def main():
                     for _ in range(3):
                         world.tick()
 
-                    camera, radar, cam, rad = spawn_sensors_fixed(world, camera_bp, radar_bp)
-                    save_sensor_config(run_dir, camera_bp, radar_bp, cam, rad)
+                    camera, radars, cam = spawn_sensors_fixed(world, camera_bp, radar_bp)
+                    save_sensor_config(run_dir, camera_bp, radar_bp, cam,
+                                       [r.get_transform() for r in radars])
 
                     for _ in range(2):
                         world.tick()
                     snap = world.get_snapshot()
                     run_start_sim_time = float(snap.timestamp.elapsed_seconds)
+
+                    with _rec_lock:
+                        global _recording_active
+                        _recording_active = True
+                        run_start_sim_time = None
 
                     scenario_module.run(
                         world,
@@ -510,6 +621,9 @@ def main():
                         duration_sec=RECORD_DURATION_SEC,
                         output_dir=run_dir
                     )
+
+                    with _rec_lock:
+                        _recording_active = False
 
                     time.sleep(0.3)
 
@@ -522,11 +636,19 @@ def main():
                 finally:
                     run_start_sim_time = None
                     safe_destroy_actor(camera)
-                    safe_destroy_actor(radar)
+                    for r in radars:
+                        safe_destroy_actor(r)
                     camera = None
-                    radar = None
+                    radars = []
 
                     safe_destroy_vehicles_batch(world, client)
+
+                    finalize_recording(run_dir)
+
+                    frames_dir = os.path.join(run_dir, "frames")
+                    if os.path.isdir(frames_dir):
+                        shutil.rmtree(frames_dir, ignore_errors=True)
+
                     stop_recording()
 
                     append_run_log([
@@ -548,20 +670,20 @@ def main():
                         error_msg
                     ])
 
-        print("\nZakończono batch.")
-        print(f"Wyniki: {root_dir}")
+        print("\nBatch finalized.")
+        print(f"Saved in: {root_dir}")
         print(f"Log:    {session_log_path}")
 
     except Exception as e:
-        print(f"\nBłąd środowiska: {e}")
+        print(f"\nCarla error: {e}")
         traceback.print_exc()
 
     finally:
         safe_destroy_actor(camera)
-        safe_destroy_actor(radar)
+        for r in radars:
+            safe_destroy_actor(r)
         stop_recording()
 
 
 if __name__ == "__main__":
     main()
-
