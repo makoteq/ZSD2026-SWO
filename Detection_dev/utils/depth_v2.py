@@ -47,12 +47,6 @@ class DepthV2:
             depth = self.model.infer_image(frame)
             depthData = depth.astype(np.float32)
 
-            plt.imshow(depthData, cmap='magma', interpolation='nearest')
-            plt.colorbar(label='Depth')
-            plt.title('Depth Map Heatmap')
-            plt.axis('off')
-            plt.show()
-
         return depthData
 
     def saveDepthMap(self, depthMap: np.ndarray, outputDir: str, name: str = "depth") -> None:
@@ -60,14 +54,25 @@ class DepthV2:
 
         npyPath = os.path.join(outputDir, f"{name}.npy")
         np.save(npyPath, depthMap)
-        print(f"DepthV2: saved raw depth map -> {npyPath}")
 
         depth_norm = (depthMap - depthMap.min()) / (depthMap.max() - depthMap.min())
         depth_vis = (depth_norm * NORM_MAX).astype(UINT8_DTYPE)
         depth_color = cv2.applyColorMap(depth_vis, COLORMAP)
         pngPath = os.path.join(outputDir, f"{name}.png")
         cv2.imwrite(pngPath, depth_color)
-        print(f"DepthV2: saved visualization -> {pngPath}")
+
+
+def loadOrComputeDepthMap(npyPath: str, firstFrame: np.ndarray, modelPath: str, libPath: str, outputDir: str, name: str = "base_depth") -> np.ndarray:
+    if os.path.exists(npyPath):
+        print("DepthV2: loaded depth map from base_depth.npy file.")
+        return np.load(npyPath)
+    
+    print("DepthV2: computing depth map from scratch.")
+    depthProcessor = DepthV2(modelPath=modelPath, libPath=libPath)
+    baseDepthMap = depthProcessor.getDepthMap(firstFrame)
+    depthProcessor.saveDepthMap(baseDepthMap, outputDir, name=name)
+    return baseDepthMap
+
 
 def rankCarsByDepth(depthMap: np.ndarray, cars: list[dict]) -> list[dict]:
     """
@@ -306,3 +311,9 @@ def saveDepthVisualization(depthMap: np.ndarray, outputDir: str, name: str = "de
     pngPath = os.path.join(outputDir, f"{name}.png")
     cv2.imwrite(pngPath, depth_color)
     print(f"DepthV2: saved visualization -> {pngPath}")
+
+    plt.imshow(depthMap, cmap='magma', interpolation='nearest')
+    plt.colorbar(label='Depth')
+    plt.title('Edited Depth Map Heatmap')
+    plt.axis('off')
+    plt.show()

@@ -7,8 +7,6 @@ from .weather import getWeather
 # from ..algorithms.model_training.vehicle_classification_CNN.dataset import mass_factor
 from datetime import date
 
-TODAY = date.today()
-WEATHER_MARKIPLIER = getWeather(54.37163,18.61898, TODAY, 12)
 IMAGE_WIDTH: Final[int] = 128
 IMAGE_HEIGHT: Final[int] = 128
 IMG_SIZE: Final[Tuple[int, int]] = (IMAGE_WIDTH, IMAGE_HEIGHT)
@@ -90,7 +88,6 @@ class Car:
         self.imgSize = 0.0
         self.radar = None
 
-        self.cameraDistance = 99.0
 
         self.wasInsideLane: Union[bool, None] = None
         self.isOutsideLane = False
@@ -167,7 +164,8 @@ class Car:
         if pixelWidthAtY == 0:
             return 0.0
 
-        distance = (roadWidthMeters * roadWidthH0Px) * self.fov / pixelWidthAtY
+        D_0 = 8.5 
+        distance = D_0 * (roadWidthH0Px / pixelWidthAtY)
         return float(distance)
 
     def getSize(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:
@@ -203,34 +201,6 @@ class Car:
 
         return float(w_m), float(h_m)
 
-    def calcStoppingDistance(self):
-        last_size = self.size[-1]
-        if last_size.w <= 0 or last_size.h <= 0:
-            return "medium", 1500
-        dimensions = last_size.w + last_size.h
-        mass = 546.97 * dimensions
-
-        car_category = 'medium'
-
-        if WEATHER_MARKIPLIER == 1:
-            reaction_time = 1.5
-        elif WEATHER_MARKIPLIER == 1.7 or WEATHER_MARKIPLIER == 3:
-            reaction_time = 2.0
-        else:
-            reaction_time = 1.0
-
-        speed = self.velo[-1].v
-        if speed <= 0:
-            speed = 50.0/3.6
-
-        breaking_distance = float(reaction_time * speed) +((speed/10)*3 + (speed/10)**2)*WEATHER_MARKIPLIER
-        self.mass = float(mass)
-        # distance = float(breaking_approx * mass * (self.velo[-1].v ** 2)) no velocity detection so constant used instead:
-        #distance = float(breaking_approx * mass * (50.0 ** 2))
-        self.breakingDistance = breaking_distance
-        self.stoppingDistance.append(stoppingDistance(distance=breaking_distance, mass=float(mass),car_category=car_category))
-        return car_category, mass
-
     def calcPosition(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:
         yBottom = self.y + (self.h / 2.0)
         xCar = self.x
@@ -264,7 +234,6 @@ class Car:
         self.radar = radar
 
         rawX, rawY = self.calcPosition(detectedLines, roadWidthH0Px)
-        self.cameraDistance = self.calcDistance(detectedLines, roadWidthH0Px, ROAD_WIDTH_METERS)
         currentV = float(self.velo[-1].v)
 
         realW, realH = self.getSize(detectedLines, roadWidthH0Px)
@@ -295,7 +264,6 @@ class Car:
 
         self.pos.append(finalPos)
         self.velo.append(velocity(v=currentV, frame=frameIndex))
-        category, mass = self.calcStoppingDistance()
 
         self.updateCount += 1
 
@@ -307,7 +275,5 @@ class Car:
             crop = frame[max(0, y1):min(frame.shape[0], y2), max(0, x1):min(frame.shape[1], x2)]
             if crop.size > 0:
                 self.lastCrop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-                self.type = category
-                self.mass = float(mass)
 
 

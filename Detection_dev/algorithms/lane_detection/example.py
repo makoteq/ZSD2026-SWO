@@ -12,7 +12,7 @@ def load_images(path: str):
     return images
 
 def show_image_with_trackbar(window_name, image):
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
 
     def trackbar_change(pos):
         if pos < 1:
@@ -24,12 +24,12 @@ def show_image_with_trackbar(window_name, image):
 
         rsz_image = cv2.resize(image, (w, h), interpolation=cv2.INTER_AREA)
 
-        cv2.resizeWindow(window_name, w, h)
+
         cv2.imshow(window_name, rsz_image)
 
     cv2.createTrackbar('Scale %', window_name, 25, 200, trackbar_change)
 
-    trackbar_change(25)  # Start with 25% scale
+    trackbar_change(25)
 
     cv2.waitKey(0)
     cv2.destroyWindow(window_name)
@@ -40,7 +40,7 @@ def main():
 
     for img in images:
         lanes = detector.detect(img)
-        res = detector.draw_on_original(img, lanes)
+        res = detector.draw_lines(img, lanes)
         show_image_with_trackbar("result", res)
 
     cv2.destroyAllWindows()

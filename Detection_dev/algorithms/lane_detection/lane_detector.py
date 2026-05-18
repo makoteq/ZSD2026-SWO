@@ -5,17 +5,18 @@ class LaneDetector:
     def __init__(self, config=None):
         self.config = {
             'yolo_conf': 0.25,
-            'crop_top': 0.3,
+            'crop_top': 0.1,
             'adapt_block_size': 81,
             'adapt_c': -15,
-            'hough_threshold_percentage': 0.09,
-            'hough_min_length_percentage': 0.2,
-            'hough_max_gap_percentage': 0.05,
+            'hough_threshold_percentage': 0.15,
+            'hough_min_length_percentage': 0.20,
+            'hough_max_gap_percentage': 0.1,
             'hough_threshold': 0,
             'hough_min_length': 0,
             'hough_max_gap': 0,
             'vp_tolerance_percentage': 0.2,
-            'vp_tolerance': 0
+            'vp_tolerance': 0,
+            'min_line_distance_percentage': 0.1,
         }
         if config:
             self.config.update(config)
@@ -73,6 +74,7 @@ class LaneDetector:
         combined_paint_mask = cv2.bitwise_or(white_mask, yellow_mask)
         raw_mask = cv2.bitwise_or(combined_paint_mask, pure_white_mask)
 
+
         stencil_mask = np.zeros_like(raw_mask)
 
         lines = cv2.HoughLinesP(
@@ -100,7 +102,6 @@ class LaneDetector:
 
         kernel_dilate = np.ones((5, 5), np.uint8)
         final_mask = cv2.dilate(original_pixels_kept, kernel_dilate, iterations=1)
-
         return final_mask
 
     def get_math_lines(self, paint_mask):
@@ -191,10 +192,24 @@ class LaneDetector:
         best_combo_score = 0
         best_fallback_duo = [unique_lines[0], unique_lines[1]]
 
+        min_dist = width * self.config['min_line_distance_percentage']
+
         if len(unique_lines) >= 3:
             for combo in itertools.combinations(unique_lines, 3):
                 combo_sorted = sorted(combo, key=lambda x: x['weight'], reverse=True)
                 l1, l2, l3 = combo_sorted[0], combo_sorted[1], combo_sorted[2]
+
+                x1 = l1['m'] * y_eval + l1['b']
+                x2 = l2['m'] * y_eval + l2['b']
+                x3 = l3['m'] * y_eval + l3['b']
+
+                dist12 = abs(x1 - x2)
+                dist13 = abs(x1 - x3)
+                dist23 = abs(x2 - x3)
+
+
+                if dist12 < min_dist or dist13 < min_dist or dist23 < min_dist:
+                    continue
 
                 dm = l1['m'] - l2['m']
 
