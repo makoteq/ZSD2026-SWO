@@ -29,8 +29,8 @@ with open(CONFIG_JSON_PATH, 'r', encoding='utf-8') as f:
     cfg = json.load(f)
 
 # Control
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_Control/1_Control.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_Control/1_Control--6.0.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_Control/1_Control.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_Control/1_Control--6.0.csv")
 
 # normal traffic
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/7_Control/7_Control.mp4")
@@ -55,6 +55,10 @@ RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_Control/1_Control--6.
 # overtaking
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_C/1_C.mp4")
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_C/1_C--6.0.csv")
+
+VIDEO_PATH = os.path.join(DATA_DIR, "test/8_C/8_C.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "test/8_C/8_C--6.0.csv")
+
 
 CSV_PATH = os.path.join(DATA_DIR, SCENARIO, "car.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
