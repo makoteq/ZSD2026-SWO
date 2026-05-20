@@ -40,8 +40,8 @@ REPORTS_DIR = os.path.join(PROJECT_ROOT, "docs", "Reports")
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_control.csv")
 
 # seb new overtaking
-VIDEO_PATH = os.path.join(DATA_DIR, "new_overtaking/1_overtaking/1_overtaking.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "new_overtaking/1_overtaking/1_overtaking--6.5.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/11_AC/11_AC.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/11_AC/11_AC---6.0.csv")
 
 # # seb new double overtaking
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/new_overtaking/1_overtaking_double/1_overtaking_double.mp4")
@@ -93,6 +93,7 @@ ALLOWED_CLASSES_IDS = [0]
 MAX_MISSING_FRAMES = 5
 LINE_THICKNESS = 1
 TRACK_COLOR = (0, 255, 0)
+LANE_DEPARTURE_MARGIN_PX = 10
 
 TEXT_COLOR: Final[tuple] = (255, 255, 255)
 TEXT_THICKNESS: Final[int] = 2
@@ -123,7 +124,7 @@ EXIT_KEY = ord('q')
 
 RUN_MODE = "batch"  # "single" or "batch"
 DATASET_ROOT = os.path.join(DATA_DIR, "dataset")
-BATCH_CSV_SUFFIX = "--6.0.csv"
+BATCH_CSV_SUFFIX = "---6.0.csv"
 BATCH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "batch")
 BATCH_WRITE_VIDEOS = False
 BATCH_SHOW_WINDOW = True
@@ -136,13 +137,15 @@ def classify_alarm_reason(reason: str) -> str:
         return "unknown"
     lowered = reason.lower()
     if "speed limit" in lowered:
-        return "speed_limit_exceeded"
+        return "A"
+    if "anomaly by the" in lowered and "line" in lowered:
+        return "B"
     if "overtake" in lowered:
-        return "overtaking_detected"
+        return "C"
     if "lane departure" in lowered:
-        return "lane_departure"
+        return "B"
     if "stop" in lowered and "distance" in lowered:
-        return "stopping_distance"
+        return "other"
     return "other"
 
 
@@ -179,9 +182,8 @@ def parse_detected_codes_from_reasons(alarm_reasons: str) -> List[str]:
         return []
     codes: List[str] = []
     for reason_part in alarm_reasons.split(";"):
-        reason = reason_part.split("(", 1)[0].strip()
-        code = REASON_TO_CODE.get(reason)
-        if code:
+        code = reason_part.split("(", 1)[0].strip().upper()
+        if code in CODE_TO_REASON:
             codes.append(code)
     return sorted(set(codes), key=CODE_ORDER.index)
 
@@ -489,8 +491,8 @@ def run_single_recording(
                             x_left_line_at_y2 = (m_left * y2) + b_left
                             x_right_line_at_y2 = (m_right * y2) + b_right
 
-                            out_of_left = x1 < x_left_line_at_y2
-                            out_of_right = x2 > x_right_line_at_y2
+                            out_of_left = x1 < (x_left_line_at_y2 - LANE_DEPARTURE_MARGIN_PX)
+                            out_of_right = x2 > (x_right_line_at_y2 + LANE_DEPARTURE_MARGIN_PX)
 
                             if out_of_left or out_of_right:
                                 direction = "LEFT" if out_of_left else "RIGHT"
@@ -501,7 +503,7 @@ def run_single_recording(
                                 ) >= LANE_DEPARTURE_COOLDOWN_FRAMES:
                                     alarm_tracker.trigger(
                                         1,
-                                        f"Lane departure car {trackId} crossed {direction} line!",
+                                        f"Anomaly by the {direction} line!",
                                         0.0,
                                         currentTime,
                                     )
@@ -683,6 +685,7 @@ def run_batch(model: YOLO, device: str) -> None:
 
         expected_codes = parse_expected_codes_from_path(video_path, folder_label=folder_label)
         detected_codes = parse_detected_codes_from_reasons(alarm_reasons)
+        alarm_detected = bool(detected_codes)
         expected_alarm = bool(expected_codes)
         codes_match = set(expected_codes) == set(detected_codes)
         if codes_match:

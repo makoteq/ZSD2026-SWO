@@ -49,20 +49,34 @@ with open(CONFIG_JSON_PATH, 'r', encoding='utf-8') as f:
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_AC/1_AC--6.0.csv")
 
 # lane departure
-# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_B/1_B.mp4")
-# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_B/1_B--6.0.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_AC/2_AC.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_AC/2_AC---6.0.csv")
+
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_B/2_B.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_B/2_B---6.0.csv")
+
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/12_AC/12_AC.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/12_AC/12_AC---6.0.csv")
 
 # overtaking
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_C/1_C.mp4")
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_C/1_C--6.0.csv")
 
-VIDEO_PATH = os.path.join(DATA_DIR, "test/8_C/8_C.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "test/8_C/8_C--6.0.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "test/28_AB/28_AB.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "test/28_AB/28_AB--6.0.csv")
 
+# VIDEO_PATH = os.path.join(DATA_DIR, "test/1_Control.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "test/1_Control---6.0.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "test/rgb(12).mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "test/radar_points_world(6).csv")
 
 CSV_PATH = os.path.join(DATA_DIR, SCENARIO, "car.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
-OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
+OUTPUT_VIDEO_PATH = os.path.join(
+    DATA_DIR,
+    "output",
+    f"{os.path.splitext(os.path.basename(VIDEO_PATH))[0]}_trajectory.mp4",
+)
 DEPTH_MODEL_PATH = cfg["depth"]["model_path"]
 DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
 DEPTH_OUTPUT_DIR = cfg["depth"]["output_dir"]
@@ -79,6 +93,7 @@ IMGSZ = 800
 ALLOWED_CLASSES_IDS = [0]
 LINE_THICKNESS = 1
 TRACK_COLOR = (0, 255, 0)
+LANE_DEPARTURE_MARGIN_PX = 10
 
 TEXT_COLOR: Final[tuple] = (255, 255, 255)
 TEXT_THICKNESS: Final[int] = 2
@@ -142,6 +157,7 @@ if __name__ == "__main__":
     cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
     frameWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frameHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    os.makedirs(os.path.dirname(OUTPUT_VIDEO_PATH), exist_ok=True)
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(OUTPUT_VIDEO_PATH, fourcc, int(fps), (frameWidth, frameHeight))
 
@@ -217,7 +233,6 @@ if __name__ == "__main__":
                     currentDistance: float = abs(cluster['y_corrected']) -ACTUAL_RADAR_OFFSET
                     currentVelocity: float = abs(cluster['radial_velocity'])
                     stoppingDistance: float = abs(calcStoppingDistance(currentVelocity, multiplier))
-                    print(f"Distance: {currentDistance:.2f}, adjusted with offset {ACTUAL_RADAR_OFFSET:.1f} m")
                     if RADAR_DEBUG:
                         print(f"Distance: {currentDistance:.2f}, adjusted with offset {ACTUAL_RADAR_OFFSET:.1f} m")
 
@@ -308,15 +323,15 @@ if __name__ == "__main__":
                             x_left_line_at_y2 = (m_left * y2) + b_left
                             x_right_line_at_y2 = (m_right * y2) + b_right
 
-                            out_of_left = x1 < x_left_line_at_y2
-                            out_of_right = x2 > x_right_line_at_y2
+                            out_of_left = x1 < (x_left_line_at_y2 - LANE_DEPARTURE_MARGIN_PX)
+                            out_of_right = x2 > (x_right_line_at_y2 + LANE_DEPARTURE_MARGIN_PX)
 
                             if out_of_left or out_of_right:
                                 direction = "LEFT" if out_of_left else "RIGHT"
 
                                 if frameIndex - laneDepartureCooldown.get(trackId,
                                                                           -LANE_DEPARTURE_COOLDOWN_FRAMES) >= LANE_DEPARTURE_COOLDOWN_FRAMES:
-                                    alarm_manager.trigger(1, f"Lane departure car {trackId} crossed {direction} line!",
+                                    alarm_manager.trigger(1, f"Anomaly by the {direction} line!",
                                                           0.0, currentTime)
                                     laneDepartureCooldown[trackId] = frameIndex
                     # --- END LANE DEPARTURE WATCHDOG ---

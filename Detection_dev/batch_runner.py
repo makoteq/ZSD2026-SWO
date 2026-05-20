@@ -69,9 +69,17 @@ def save_batch_report_markdown(
     tn = 0
     fp = 0
     fn = 0
+    match_true = 0
+    expected_alarm_count = 0
     for row in report_rows:
         expected_alarm = row["expected_alarm"] == "True"
         detected_alarm = row["alarm_detected"] == "True"
+        match = row["match"] == "True"
+
+        if expected_alarm:
+            expected_alarm_count += 1
+        if match:
+            match_true += 1
 
         if expected_alarm and detected_alarm:
             tp += 1
@@ -83,7 +91,7 @@ def save_batch_report_markdown(
             fn += 1
 
     false_alarm_rate = (fp / (fp + tn) * 100.0) if (fp + tn) else 0.0
-    true_alarm_rate = (tp / (tp + fn) * 100.0) if (tp + fn) else 0.0
+    true_alarm_rate = (match_true / expected_alarm_count * 100.0) if expected_alarm_count else 0.0
 
     def esc(value: str) -> str:
         return value.replace("|", "\\|")
