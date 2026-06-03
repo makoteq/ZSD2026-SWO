@@ -23,9 +23,27 @@ from datetime import date
 import numpy as np
 import re
 
+
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
-SCENARIO = "output"
+
 DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
+
+def resolve_config_path(path: str, base_dir: str = DATA_DIR) -> str:
+    if not isinstance(path, str):
+        raise ValueError(f"Config path must be a string: {path!r}")
+
+    normalized = path.replace('\\', '/').strip()
+    windows_drive = re.match(r'^[A-Za-z]:/', normalized)
+    if windows_drive:
+        normalized = normalized.split(':', 1)[1]
+        normalized = normalized.lstrip('/')
+
+    if os.path.isabs(normalized):
+        return os.path.abspath(normalized)
+
+    return os.path.abspath(os.path.join(base_dir, normalized))
+
+SCENARIO = "output"
 
 CONFIG_JSON_PATH = os.path.join(DATA_DIR, "config", "config.json")
 if not os.path.exists(CONFIG_JSON_PATH):
@@ -44,8 +62,8 @@ with open(CONFIG_JSON_PATH, 'r', encoding='utf-8') as f:
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/7_Control/7_Control--6.0.csv")
 
 # speeding
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_A/1_A.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_A/1_A--6.0.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_AB/2_AB.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_AB/2_AB--6.0.csv")
 
 # speeding/lane departure
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_AB/1_AB.mp4")
@@ -133,27 +151,14 @@ output_csv = os.path.join(METRICS_DIR, "metryki_new_main_metrics.csv")
 
 
 alarm_manager = AlarmManager()
-def resolve_config_path(path: str, base_dir: str = DATA_DIR) -> str:
-    if not isinstance(path, str):
-        raise ValueError(f"Config path must be a string: {path!r}")
 
-    normalized = path.replace('\\', '/').strip()
-    windows_drive = re.match(r'^[A-Za-z]:/', normalized)
-    if windows_drive:
-        normalized = normalized.split(':', 1)[1]
-        normalized = normalized.lstrip('/')
-
-    if os.path.isabs(normalized):
-        return os.path.abspath(normalized)
-
-    return os.path.abspath(os.path.join(base_dir, normalized))
 if __name__ == "__main__":
     
     # correctionFunc = plotYOffsetCorrelation(CSV_PATH)
 
     correctionFunc = lambda x: 0.0
     model = YOLO(YOLO_MODEL_PATH)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    #device = "cuda" if torch.cuda.is_available() else "cpu"
     
     with open(RADAR_CSV_PATH, 'r') as f:
         f.readline()  
@@ -174,8 +179,8 @@ if __name__ == "__main__":
     fps = cap.get(cv2.CAP_PROP_FPS)
     print(f"FPS: {fps}")
 
-    print(f"{cfg["weather"]["latitude"],cfg["weather"]["longitude"]}\nDate: {cfg["weather"]["date"]}, "
-          f"Weather conditions: {cfg["weather"]["condition"]} \n{cfg["weather"]["description"]}")
+    # print(f"{cfg["weather"]["latitude"],cfg["weather"]["longitude"]}\nDate: {cfg["weather"]["date"]}, "
+          # f"Weather conditions: {cfg["weather"]["condition"]} \n{cfg["weather"]["description"]}")
 
     frame_time = 1.0 / fps
     cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
@@ -489,9 +494,9 @@ if __name__ == "__main__":
 
             #cv2.imshow(WINDOW_NAME, annotatedFrame)
             # TEMP WINDOW
-            # previewFrame = cv2.resize(annotatedFrame, None, fx = DISPLAY_SCALE, fy = DISPLAY_SCALE, interpolation = cv2.INTER_AREA)
-            # cv2.imshow(WINDOW_NAME, previewFrame)
-            # if cv2.waitKey(WAIT_KEY_MS) & 0xFF == EXIT_KEY: break
+            previewFrame = cv2.resize(annotatedFrame, None, fx = DISPLAY_SCALE, fy = DISPLAY_SCALE, interpolation = cv2.INTER_AREA)
+            cv2.imshow(WINDOW_NAME, previewFrame)
+            if cv2.waitKey(WAIT_KEY_MS) & 0xFF == EXIT_KEY: break
 
 
             frameIndex += 1
