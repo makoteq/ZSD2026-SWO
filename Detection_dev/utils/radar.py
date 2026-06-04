@@ -70,7 +70,12 @@ TIME_STEP_DEFAULT = 0.5
 
 
 class Radar:
+    """
+    Handles radar point cloud data ingestion, geometric calibration, 
+    noise simulation, temporal filtering, and DBSCAN clustering.
+    """
     def __init__(self, csv_path: str, start_time: float) -> None:
+        """Initializes the radar processor and prepares the base dataset."""
         self.pointsSwap: np.ndarray = np.empty((0, 4), dtype=float)
         self.pointsSwapLabels: np.ndarray = np.empty((0,), dtype=int)
         self.currentTime: float = INITIAL_TIME_VALUE
@@ -93,6 +98,7 @@ class Radar:
         self.adjustPoints(SENSOR_PITCH_DEG, SENSOR_YAW_DEG, SENSOR_ROLL_DEG, CAMERA_HEIGHT_OFFSET)
 
     def loadData(self) -> None:
+        """Loads, chronologically sorts, and saves the radar data to a working file."""
         if not os.path.exists(self.csvPath):
             raise FileNotFoundError(f"File not found: {self.csvPath}")
         
@@ -106,6 +112,7 @@ class Radar:
         gc.collect()
 
     def step(self, timeStep: float) -> None:
+        """Loads and filters points falling within the current time step window."""
         self.pointsSwap = np.empty((0, 4), dtype=float)
         self.pointsSwapLabels = np.empty((0,), dtype=int)
         
@@ -144,6 +151,7 @@ class Radar:
         gc.collect()
 
     def clusterPoints(self) -> None:
+        """Applies feature scaling and DBSCAN clustering to the current active points."""
         if self.pointsSwap.size == 0:
             return
 
@@ -174,6 +182,7 @@ class Radar:
         gc.collect()
 
     def visualizeClusteredStep(self) -> None:
+        """Generates a 3D scatter plot of the currently clustered step points."""
         fig: plt.Figure = plt.figure(figsize=(FIG_SIZE_X, FIG_SIZE_Y))
         ax = fig.add_subplot(111, projection='3d')
         
@@ -217,6 +226,7 @@ class Radar:
         plt.close(fig)
 
     def calculateRoll(self, closeWindow: float = 20.0, farWindow: float = 20.0, numLowest: int = 10) -> float:
+        """Calculates sensor roll angle based on the lowest points in near and far distance windows."""
         df = pd.read_csv(self.outputCsvPath, usecols=[COLUMN_Y, COLUMN_Z])
         if df.empty:
             del df
@@ -243,6 +253,7 @@ class Radar:
         return float(np.degrees(np.arctan2(deltaZ, deltaY)))
 
     def visualize(self) -> None:
+        """Renders the entire corrected radar point cloud dataset in a 3D space."""
         self.findLane()
         df = pd.read_csv(self.outputCsvPath, usecols=[X_COLUMN, Y_COLUMN, Z_COLUMN])
         if df.empty:
@@ -297,7 +308,8 @@ class Radar:
         del df
         gc.collect()
 
-    def findLane(self): 
+    def findLane(self) -> None: 
+        """Determines spatial boundaries and estimates lane width from data extrema."""
         df = pd.read_csv(self.outputCsvPath, usecols=[X_COLUMN, Y_COLUMN])
         if df.empty:
             del df
@@ -319,6 +331,7 @@ class Radar:
         gc.collect()
 
     def calculateYaw(self, closeWindow: float = 20.0, farWindow: float = 20.0) -> float:
+        """Calculates sensor yaw angle based on median lateral displacement over distance."""
         df = pd.read_csv(self.outputCsvPath, usecols=[COLUMN_X, COLUMN_Y])
         if df.empty:
             del df
@@ -348,6 +361,7 @@ class Radar:
         return float(np.degrees(np.arctan2(deltaX, deltaY)))
 
     def adjustPoints(self, pitch: float, yaw: float, roll: float, heightOffset: float) -> None:
+        """Applies 3D rotation matrices and height offset corrections to raw sensor coordinates."""
         df = pd.read_csv(self.outputCsvPath)
         pitchRad: float = np.radians(-pitch)
         yawRad: float = np.radians(-self.calculateYaw())
@@ -374,6 +388,7 @@ class Radar:
         gc.collect()
 
     def applyMask(self, zMin: float, zMax: float, yMin: float, yMax: float) -> None:
+        """Filters dataset to include only valid moving objects within distance limits."""
         df = pd.read_csv(self.outputCsvPath)
         df = df[
             (df[Y_COLUMN] >= yMin) &
@@ -388,6 +403,7 @@ class Radar:
         gc.collect()
 
     def addNoise(self) -> None:
+        """Simulates measurement noise by adding random errors to polar coordinates and velocity."""
         df = pd.read_csv(self.outputCsvPath)
         if df.empty:
             del df
@@ -422,6 +438,7 @@ class Radar:
         gc.collect()
 
     def getClusterCenters(self) -> List[Dict[str, float]]:
+        """Calculates the arithmetic mean coordinates and inverted velocity for each cluster."""
         if isinstance(self.clusterCenters, list):
             self.clusterCenters.clear()
         self.clusterCenters = []
@@ -445,15 +462,3 @@ class Radar:
         self.clusterCenters = centers
         return self.clusterCenters
 
-
-if __name__ == "__main__":
-    radar = Radar(csv_path=CSV_PATH, start_time=0.0)
-    radar.debug = True
-
-    radar.applyMask(MASK_Z_MIN, MASK_Z_MAX, MASK_Y_MIN, MASK_Y_MAX)
-    radar.addNoise()
-    radar.findLane()
-    for _ in range(LOOP_ITERATIONS):
-        radar.step(TIME_STEP_DEFAULT)
-        radar.clusterPoints()
-        radar.getClusterCenters()
