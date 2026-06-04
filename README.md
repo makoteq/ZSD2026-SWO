@@ -17,13 +17,13 @@ Description of repository directories:
 This project integrates various open-source components. All utilized tools and datasets are applied in accordance with their respective licensing terms and conditions.
 
 ### Utilized Licenses:
-| **Tool** | **License** |
-| :--- | :--- |
-| Python (>3.8.6) | PSF License Version 2 |
-| OpenCV (>4.5.0) | Apache License 2.0 |
-| CARLA (0.9.16) | MIT License |
-| Ultralytics YOLO (YOLOv26n) | GNU Affero General Public License v3.0 |
-| Google Coral | Apache License 2.0 |
-| Raspberry Pi (4 or 5) |Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA) licence |
-| Depth-Anything-V2 | Apache License 2.0 |
+| **Tool**                  | **License** |
+|:--------------------------| :--- |
+| Python (>3.8.6)           | PSF License Version 2 |
+| OpenCV (>4.5.0)           | Apache License 2.0 |
+| CARLA (0.9.16)            | MIT License |
+| Ultralytics YOLO (YOLOv8) | GNU Affero General Public License v3.0 |
+| Depth-Anything-V2         | Apache License 2.0 |
+| Google Coral              | Apache License 2.0 |
+| Raspberry Pi 4 Model B    |Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA) licence |
 ---

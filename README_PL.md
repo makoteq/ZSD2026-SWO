@@ -21,5 +21,7 @@ Realizacja projektu wykorzystuje integrację komponentów open-source, przy czym
 |OpenCV (>4.5.0)|Apache License 2.0|
 |CARLA (0.9.16)|MIT License|
 |Ultralytics YOLO (YOLOv26n)|GNU Affero General Public License v3.0|
+| Depth-Anything-V2         | Apache License 2.0 |
 |Google Coral|Apache License 2.0|
-|Raspberry PI (4 lub 5)|Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA) licence|
+|Raspberry Pi 4 Model B|Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA) licence|
+---
