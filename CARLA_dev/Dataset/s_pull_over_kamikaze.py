@@ -22,8 +22,8 @@ PULL_START_X_MIN = 120.0
 PULL_START_X_MAX = 140.0
 PULL_DURATION_SEC = 2.2
 
-MIN_SHIFT = 0.4
-MAX_SHIFT = 0.7
+MIN_SHIFT = 2.4
+MAX_SHIFT = 2.7
 
 DT = 0.05
 
@@ -120,7 +120,7 @@ def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
     t0 = time.time()
 
     try:
-        # Quick phase to meet target speed
+        # Short phase to meet target speed
         warmup_t0 = time.time()
         while time.time() - warmup_t0 < 2.0:
             apply_speed(v1, cruise_kph, steer=0.0)
@@ -156,7 +156,7 @@ def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
             elif phase == "pull":
                 # Steer to reach target disp
                 y_err = target_y - loc1.y
-                steer_cmd = max(-0.22, min(0.22, 0.18 * y_err))
+                steer_cmd = max(-0.52, min(0.22, 0.18 * y_err))
                 apply_speed(v1, cruise_kph, steer=steer_cmd)
 
                 if (time.time() - pull_t0) >= PULL_DURATION_SEC or abs(y_err) < 0.25:
@@ -164,8 +164,8 @@ def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
 
             elif phase == "straighten":
                 apply_speed(v1, max(25.0, cruise_kph * 0.8), steer=0.0)
-                if abs(v1.get_location().y - target_y) < 0.35:
-                    phase = "brake"
+                # if abs(v1.get_location().y - target_y) < 0.35:
+                #     phase = "brake"
 
             elif phase == "brake":
                 brake_to_stop(v1, steer=0.0)
