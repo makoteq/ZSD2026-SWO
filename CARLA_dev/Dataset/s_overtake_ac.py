@@ -9,25 +9,22 @@ import numpy as np
 # Lane parameters
 LANE_A_Y = 109.5
 LANE_B_Y = 105.5
-START_X = 4.0
+START_X = -3.0
 SPAWN_Z = 0.8
 YAW = 0.0
 CROSSING_LINE = 206.0
 DT = 0.05
 
 # Car speed parameters
-CRUISE_MIN_KPH = 20.0
-CRUISE_MAX_KPH = 30.0
-OVERTAKE_MAX_KPH = 40.0
+CRUISE_MIN_KPH = 50.0
+CRUISE_MAX_KPH = 50.0
+OVERTAKE_MAX_KPH = 70.0
 
-OVERTAKE_START_MIN = 20.0
-OVERTAKE_START_MAX = 60.0
+OVERTAKE_START_MIN = 110.0
+OVERTAKE_START_MAX = 120.0
 
 PASS_GAP_X = 10
-CUTIN_Y_TOL = 0.5
-
-
-
+CUTIN_Y_TOL = 0.10
 
 # Utils
 def destroy_all_vehicles(world):
@@ -97,7 +94,6 @@ def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
     v_slow = world.try_spawn_actor(bp_slow, t_slow)
     v_fast = world.try_spawn_actor(bp_fast, t_fast)
 
-    # Cleanup
     if v_slow is None or v_fast is None:
         print("[SPAWN ERROR] realistic_overtake")
         destroy_all_vehicles(world)
@@ -153,7 +149,7 @@ def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
                     y_target=y_slow,
                     y_current=loc_fast.y,
                     y_err_prev=y_err_prev,
-                    kp=0.03, kd=0.35, limit=0.11
+                    kp=0.03, kd=0.55, limit=0.11
                 )
                 apply_speed(v_fast, overtake_target, steer=steer_cmd)
                 apply_speed(v_slow, slow_cruise, steer=0.0)
@@ -168,7 +164,7 @@ def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
                     y_target=y_slow,
                     y_current=loc_fast.y,
                     y_err_prev=y_err_prev,
-                    kp=0.25, kd=0.30, limit=0.27
+                    kp=0.05, kd=0.30, limit=0.07
                 )
                 apply_speed(v_fast, min(50.0, overtake_target - 15.0), steer=steer_cmd)
                 apply_speed(v_slow, slow_cruise, steer=0.0)
