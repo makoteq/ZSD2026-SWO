@@ -97,6 +97,7 @@ with open(CONFIG_JSON_PATH, 'r', encoding='utf-8') as f:
 
 VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_AB/2_AB.mp4")
 RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_AB/2_AB--6.0.csv")
+
 CSV_PATH = os.path.join(DATA_DIR, SCENARIO, "car.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "416_latest_full_integer_quant_edgetpu.tflite")
 OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", f"{os.path.splitext(os.path.basename(VIDEO_PATH))[0]}_trajectory.mp4")
@@ -106,7 +107,6 @@ DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
 DEPTH_OUTPUT_DIR = resolve_config_path(cfg["depth"]["output_dir"])
 NPY_PATH = resolve_config_path(cfg["depth"]["npy_path"])
 
-# yolo
 ROAD_WIDTH_METERS = cfg["geometry"]["road_width_meters"]
 FOV = cfg["geometry"]["fov_deg"]
 
@@ -129,7 +129,6 @@ TEXT_LINE_SPACING: Final[int] = 30
 SPEED_LIMIT_KMH: Final[float] = 60.0
 SPEED_LIMIT: Final[float] = SPEED_LIMIT_KMH / 3.6
 
-# radar
 RADAR_STEP_INTERVAL = 15
 MASK_Z_MIN = 30.0
 MASK_Z_MAX = 100.0
@@ -146,15 +145,15 @@ EXIT_KEY = ord('q')
 
 METRICS_DIR = os.path.join(DATA_DIR, "metrics")
 os.makedirs(METRICS_DIR, exist_ok=True)
-output_csv = os.path.join(METRICS_DIR, "metryki_new_main_metrics.csv")
+output_csv = os.path.join(METRICS_DIR, "metrics.csv")
+SAVE_VIDEO = False        
+SAVE_CSV = False 
+SHOW_PREVIEW = False
+SAVE_DEPTH_VISUALIZATION = False
 
 alarm_manager = AlarmManager()
 
 if __name__ == "__main__":
-
-    SAVE_VIDEO: Final[bool] = False        
-    SAVE_CSV: Final[bool] = False 
-    SHOW_PREVIEW: Final[bool] = False
 
     correctionFunc = lambda x: 0.0
     model = YOLO(YOLO_MODEL_PATH)
@@ -201,8 +200,9 @@ if __name__ == "__main__":
         for box in firstFrameResults[0].boxes.xyxy.cpu().numpy()
     ] if firstFrameResults[0].boxes is not None else []
     baseDepthMap = flattenRowsMedianBackground(baseDepthMap, firstFrameBboxes, paddingFactor=0.05)
-    # if depthMapComputed:
-    #     saveDepthVisualization(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth_filled")
+    if SAVE_DEPTH_VISUALIZATION:
+        if depthMapComputed:
+            saveDepthVisualization(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth_filled")
 
     video_getter = RTSPVideoGetter(cap).start()
 
@@ -241,10 +241,6 @@ if __name__ == "__main__":
 
     last_cpu_percent = 0.0
     last_ram_percent = 0.0
-
-    if SHOW_PREVIEW:
-        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(WINDOW_NAME, 1280, 720)
 
     try:
         while video_getter.is_opened():
@@ -297,7 +293,7 @@ if __name__ == "__main__":
                 trackIds = current_boxes.id.int().cpu().tolist()
                 confidences = current_boxes.conf.cpu().tolist()
 
-                for i, (boxXyxy, boxXywh, trackId, conf) in enumerate(zip(boxesXyxy, boxesXywh, trackIds, confidences)):
+                for boxXyxy, boxXywh, trackId, conf in zip(boxesXyxy, boxesXywh, trackIds, confidences):
                     if trackId not in carsDict:
                         carsDict[trackId] = Car(trackId)
 
@@ -316,25 +312,22 @@ if __name__ == "__main__":
                         radar,
                         correctionFunc
                     )
-      
 
-                    if trackId != "N/A":
-                        unique_vehicle_ids.add(trackId)
-
-                    #if not is_detection_frame: 
-                        # drawCustomBox(
-                        #     annotatedFrame, 
-                        #     boxXyxy, 
-                        #     trackId, 
-                        #     conf, 
-                        #     car.pos[-1].x, 
-                        #     car.pos[-1].y,
-                        #     car.velo[-1].v, 
-                        #     car.stoppingDistance[-1].distance
-                        # )
+                    if SHOW_PREVIEW or SAVE_VIDEO:
+                        drawCustomBox(
+                            frame, 
+                            boxXyxy, 
+                            trackId, 
+                            conf, 
+                            car.pos[-1].x, 
+                            car.pos[-1].y,
+                            car.velo[-1].v, 
+                            car.stoppingDistance[-1].distance
+                        )
 
                     if SAVE_CSV:
                         save_car_to_csv(car, trackId, frameIndex, CSV_PATH)
+                    
                     # --- LANE DEPARTURE WATCHDOG ---
                     x1, y1, x2, y2 = boxXyxy
 
@@ -360,7 +353,7 @@ if __name__ == "__main__":
                                     alarm_manager.trigger(1, f"Anomaly by the {direction} line!",
                                                           0.0, currentTime)
                                     laneDepartureCooldown[trackId] = frameIndex
-
+            
                 if overtakingLineTriggered and overtakingLineY is None:
                     closestCarIdx = max(range(len(trackIds)), key=lambda i: boxesXyxy[i][3])
                     overtakingLineY = int(boxesXyxy[closestCarIdx][3])
@@ -387,11 +380,12 @@ if __name__ == "__main__":
 
                 prevZoneRanking = currentZoneRanking
 
-            # cv2.putText(annotatedFrame, f"Frame: {frameIndex}", (TEXT_POSITION_X, TEXT_POSITION_Y_START), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
-            # cv2.putText(annotatedFrame, f"Time: {currentTime:.2f}s", (TEXT_POSITION_X, TEXT_POSITION_Y_START + TEXT_LINE_SPACING), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
-            # cv2.putText(annotatedFrame, f"FPS: {real_fps:.2f}", (TEXT_POSITION_X, TEXT_POSITION_Y_START + 2 * TEXT_LINE_SPACING), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
-            
-            # alarm_manager.draw(annotatedFrame, currentTime)
+            if SHOW_PREVIEW or SAVE_VIDEO:
+                cv2.putText(frame, f"Frame: {frameIndex}", (TEXT_POSITION_X, TEXT_POSITION_Y_START), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
+                cv2.putText(frame, f"Time: {currentTime:.2f}s", (TEXT_POSITION_X, TEXT_POSITION_Y_START + TEXT_LINE_SPACING), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
+                cv2.putText(frame, f"FPS: {real_fps:.2f}", (TEXT_POSITION_X, TEXT_POSITION_Y_START + 2 * TEXT_LINE_SPACING), cv2.FONT_HERSHEY_SIMPLEX, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS)
+
+                alarm_manager.draw(frame, currentTime)
             
             if SAVE_VIDEO:
                 out.write(frame)
