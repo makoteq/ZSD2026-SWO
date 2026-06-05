@@ -14,38 +14,10 @@ YAW = 0.0
 CROSSING_LINE = 260.0
 
 INITIAL_KPH = 50.0
-TARGET_MIN_KPH = 100
-TARGET_MAX_KPH = 120
+TARGET_MIN_KPH = 70
+TARGET_MAX_KPH = 90
 
-#logs for speed testing ------------------------------------------------
-def save_speed_profile(speed_samples, out_dir, prefix="ego"):
-    os.makedirs(out_dir, exist_ok=True)
-
-    csv_path = os.path.join(out_dir, f"{prefix}_speed_profile.csv")
-    png_path = os.path.join(out_dir, f"{prefix}_speed_profile.png")
-
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:    #save csv
-        w = csv.writer(f)
-        w.writerow(["t_sec", "speed_kmh"])
-        w.writerows(speed_samples)
-
-    #plot
-    t = [x[0] for x in speed_samples]
-    s = [x[1] for x in speed_samples]
-
-    plt.figure(figsize=(10, 4))
-    plt.plot(t, s, linewidth=2)
-    plt.xlabel("Time [s]")
-    plt.ylabel("Speed [km/h]")
-    plt.title("Vehicle speed profile")
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(png_path, dpi=150)
-    plt.close()
-
-    print(f"[SPEED] CSV: {csv_path}")
-    print(f"[SPEED] PNG: {png_path}")
-#-----------------------------------------------------------------------
+# Utils
 def destroy_all_vehicles(world):
     for a in world.get_actors().filter('vehicle.*'):
         if a.is_alive:
@@ -61,7 +33,7 @@ def speed_kph(vehicle):
     return ms*3.6
 
 def apply_speed(vehicle, target_speed, steer = 0.0):
-    target_speed = target_speed/3.6                 #kph to mps
+    target_speed = target_speed/3.6
     v = speed_ms(vehicle)
     delta = target_speed - v
 
@@ -81,7 +53,7 @@ def apply_speed(vehicle, target_speed, steer = 0.0):
         brake = 0.0
         throttle = 0.0
 
-    #apply variables to carla car
+    # Apply variables to carla car
     vehicle.apply_control(carla.VehicleControl(
         throttle=throttle,
         brake=brake,
@@ -106,10 +78,6 @@ def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
     if v1 is None:
         print("[SPAWN ERROR] single_speeding")
         return
-
-    # initial_speed = random.uniform(40.0, 60.0) / 3.6
-    # max_speed = random.uniform(100.0, 150.0) / 3.6
-    # boost_trigger_x = random.uniform(40.0, 120.0)
 
     target_kph = random.uniform(TARGET_MIN_KPH, TARGET_MAX_KPH)
     print(f"[single_speeding] target={target_kph:.1f} km/h")
@@ -137,5 +105,3 @@ def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
             time.sleep(0.05)
     finally:
         destroy_all_vehicles(world)
-        if output_dir is not None and len(speed_samples) > 1:
-            save_speed_profile(speed_samples, output_dir, prefix="single_speeding")
