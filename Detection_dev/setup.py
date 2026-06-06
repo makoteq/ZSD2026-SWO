@@ -11,7 +11,7 @@ from datetime import date
 # Local imports
 from algorithms.lane_detection.lane_detector import LaneDetector
 from utils.radar import Radar
-from utils.depth_v2 import loadOrComputeDepthMap, flattenRowsMedianBackground, saveDepthVisualization
+from utils.depth_v2 import computeDepthMap, removeVehiclesFromDepthMap, saveDepthMap
 from utils.weather import getWeather
 
 CURRENT_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
@@ -26,7 +26,7 @@ YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth")
 DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
 DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
-NPY_PATH = os.path.join(DEPTH_OUTPUT_DIR, "base_depth.npy")
+NPY_PATH = os.path.join(DATA_DIR, "config", "base_depth.npy")
 CONFIG_JSON_PATH = os.path.join(DATA_DIR, "config", "config.json")
 
 os.makedirs(os.path.join(DATA_DIR, "output"), exist_ok=True)
@@ -86,19 +86,20 @@ if __name__ == "__main__":
     cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
     _, firstFrame = cap.read()
     cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
+ 
+    if not os.path.exists(NPY_PATH):
+        rawDepthMap = computeDepthMap(NPY_PATH, firstFrame, DEPTH_MODEL_PATH, DEPTH_LIB_PATH, DEPTH_OUTPUT_DIR)
+        firstFrameResults = model.predict(source=firstFrame, imgsz=IMGSZ, conf=CONF_THRESHOLD, verbose=False,
+                                          device=0 if device == 'cuda' else 'cpu', classes=ALLOWED_CLASSES_IDS)
+        firstFrameBboxes = [
+            {'x1': box[0], 'y1': box[1], 'x2': box[2], 'y2': box[3]}
+            for box in firstFrameResults[0].boxes.xyxy.cpu().numpy()
+        ] if firstFrameResults[0].boxes is not None else []
+        baseDepthMap = removeVehiclesFromDepthMap(rawDepthMap, firstFrameBboxes, paddingFactor=0.05)
+        saveDepthMap(baseDepthMap, os.path.join(DATA_DIR, "config"), DEPTH_OUTPUT_DIR, name="base_depth")
+    else:
+        print("DepthV2: depth map already exists, skipping.")
 
-    depthMapComputed = not os.path.exists(NPY_PATH)
-    baseDepthMap = loadOrComputeDepthMap(NPY_PATH, firstFrame, DEPTH_MODEL_PATH, DEPTH_LIB_PATH, DEPTH_OUTPUT_DIR)
-
-    firstFrameResults = model.predict(source=firstFrame, imgsz=IMGSZ, conf=CONF_THRESHOLD, verbose=False,
-                                      device=0 if device == 'cuda' else 'cpu', classes=ALLOWED_CLASSES_IDS)
-    firstFrameBboxes = [
-        {'x1': box[0], 'y1': box[1], 'x2': box[2], 'y2': box[3]}
-        for box in firstFrameResults[0].boxes.xyxy.cpu().numpy()
-    ] if firstFrameResults[0].boxes is not None else []
-    baseDepthMap = flattenRowsMedianBackground(baseDepthMap, firstFrameBboxes, paddingFactor=0.05)
-    if depthMapComputed:
-        saveDepthVisualization(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth_filled")
 
     detector = LaneDetector()
     lines_dick = detector.detect(firstFrame)
@@ -113,8 +114,6 @@ if __name__ == "__main__":
         "npy_path": NPY_PATH,
         "output_dir": DEPTH_OUTPUT_DIR,
         "model_path": DEPTH_MODEL_PATH,
-        "freshly_computed": depthMapComputed,
-        "bboxes_masked": len(firstFrameBboxes),
     }
 
     weatherMeta = {
