@@ -95,8 +95,12 @@ with open(CONFIG_JSON_PATH, 'r', encoding='utf-8') as f:
     cfg = json.load(f)
 
 
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_AB/2_AB.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_AB/2_AB--6.0.csv")
+# VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_C/1_C.mp4")
+# RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_C/1_C---6.0.csv")
+
+
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/rasp_dataset/2_AC.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/rasp_dataset/2_AC---6.0.csv")
 
 CSV_PATH = os.path.join(DATA_DIR, SCENARIO, "car.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "416_latest_full_integer_quant_edgetpu.tflite")
@@ -194,7 +198,7 @@ if __name__ == "__main__":
     depthMapComputed = not os.path.exists(NPY_PATH)
     baseDepthMap = loadOrComputeDepthMap(NPY_PATH, firstFrame, DEPTH_MODEL_PATH, DEPTH_LIB_PATH, DEPTH_OUTPUT_DIR)
 
-    firstFrameResults = model.predict(source=firstFrame, imgsz=IMGSZ,iou= 0.4, conf=CONF_THRESHOLD, verbose=False, classes=ALLOWED_CLASSES_IDS)
+    firstFrameResults = model.predict(source=firstFrame, imgsz=IMGSZ,iou= 0.25, conf=CONF_THRESHOLD, verbose=False, classes=ALLOWED_CLASSES_IDS)
     firstFrameBboxes = [
         {'x1': box[0], 'y1': box[1], 'x2': box[2], 'y2': box[3]}
         for box in firstFrameResults[0].boxes.xyxy.cpu().numpy()
@@ -283,7 +287,7 @@ if __name__ == "__main__":
                                               currentTime)
 
          
-            results = model.track(source=frame, imgsz=IMGSZ, iou=0.4, conf=CONF_THRESHOLD, persist=True, verbose=False, tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS)
+            results = model.track(source=frame, imgsz=IMGSZ, iou=0.25, conf=CONF_THRESHOLD, persist=True, verbose=False, tracker='bytetrack.yaml', classes=ALLOWED_CLASSES_IDS)
             current_boxes = results[0].boxes
             inference_ms = results[0].speed.get('inference', 0.0)
 
