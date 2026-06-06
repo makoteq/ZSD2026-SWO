@@ -11,7 +11,7 @@ from typing import Final, List
 # Local imports
 from utils.car import Car
 from utils.radar import Radar
-from utils.depth_v2 import loadOrComputeDepthMap, rankCarsByDepth, flattenRowsMedianBackground, saveDepthVisualization
+from utils.depth_v2 import loadDepthMap, rankCarsByDepth
 from utils.weather import calcStoppingDistance
 from utils.utils import detectOvertaking, drawCustomBox, save_car_to_csv
 from utils.alarm_manager import AlarmManager
@@ -55,8 +55,8 @@ with open(CONFIG_JSON_PATH, 'r', encoding='utf-8') as f:
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_B/2_B.mp4")
 # RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_B/2_B---6.0.csv")
 
-VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/12_AC/12_AC.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/12_AC/12_AC---6.0.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_C/1_C.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_C/1_C---6.0.csv")
 
 # overtaking
 # VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/1_C/1_C.mp4")
@@ -77,9 +77,6 @@ OUTPUT_VIDEO_PATH = os.path.join(
     "output",
     f"{os.path.splitext(os.path.basename(VIDEO_PATH))[0]}_trajectory.mp4",
 )
-DEPTH_MODEL_PATH = cfg["depth"]["model_path"]
-DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
-DEPTH_OUTPUT_DIR = cfg["depth"]["output_dir"]
 NPY_PATH = cfg["depth"]["npy_path"]
 
 # yolo
@@ -102,7 +99,7 @@ TEXT_POSITION_X: Final[int] = 20
 TEXT_POSITION_Y_START: Final[int] = 30
 TEXT_LINE_SPACING: Final[int] = 30
 
-SPEED_LIMIT_KMH: Final[float] = 60.0
+SPEED_LIMIT_KMH: Final[float] = 80.0
 SPEED_LIMIT: Final[float] = SPEED_LIMIT_KMH / 3.6
 
 # radar
@@ -161,29 +158,15 @@ if __name__ == "__main__":
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(OUTPUT_VIDEO_PATH, fourcc, int(fps), (frameWidth, frameHeight))
 
-    # Depth map for the first frame
-    cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
-    _, firstFrame = cap.read()
-    cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
-    
-    depthMapComputed = not os.path.exists(NPY_PATH)
-    baseDepthMap = loadOrComputeDepthMap(NPY_PATH, firstFrame, DEPTH_MODEL_PATH, DEPTH_LIB_PATH, DEPTH_OUTPUT_DIR)
-
-    firstFrameResults = model.predict(source=firstFrame, imgsz=IMGSZ, conf=CONF_THRESHOLD, verbose=False, device=0 if device == 'cuda' else 'cpu', classes=ALLOWED_CLASSES_IDS)
-    firstFrameBboxes = [
-        {'x1': box[0], 'y1': box[1], 'x2': box[2], 'y2': box[3]}
-        for box in firstFrameResults[0].boxes.xyxy.cpu().numpy()
-    ] if firstFrameResults[0].boxes is not None else []
-    baseDepthMap = flattenRowsMedianBackground(baseDepthMap, firstFrameBboxes, paddingFactor=0.05)
-    if depthMapComputed:
-        saveDepthVisualization(baseDepthMap, DEPTH_OUTPUT_DIR, name="base_depth_filled")
+    # Depth map from base_depth.npy (should be precomputed by setup.py)
+    baseDepthMap = loadDepthMap(NPY_PATH)
 
     carsDict: Dict[int, Car] = {}
     frameIndex = 0
 
     overtakingLineY = None
     overtakingLineTriggered = False
-    OVERTAKING_LINE_THRESHOLD = 60.0
+    OVERTAKING_LINE_THRESHOLD = 80.0
     closestRadarDistance = float('inf')
 
     prevZoneRanking: List[int] = []
