@@ -4,7 +4,9 @@ import numpy as np
 import sys
 import os
 from typing import Final, Any
-import matplotlib.pyplot as plt
+
+DEPTH_DEBUG: bool = True
+
 
 ENCODER: Final[str] = 'vits'
 FEATURES: Final[int] = 64
@@ -16,6 +18,16 @@ COLORMAP: Final[int] = cv2.COLORMAP_INFERNO
 
 class DepthV2:
     def __init__(self, modelPath: str, libPath: str) -> None:
+        """ Loads and initializes the DepthAnythingV2 model.
+
+        Args:
+            modelPath (str): Path to the model weights file
+            libPath (str): Path to the DepthAnythingV2 library directory
+
+        Raises:
+            ImportError: If the DepthAnythingV2 library is not found in libPath
+            FileNotFoundError: If the model weights file does not exist
+        """
         self.device = torch.device(DEVICE_CPU)
 
         absLibPath = os.path.abspath(libPath)
@@ -43,232 +55,58 @@ class DepthV2:
         print("DepthV2: model loaded.")
 
     def getDepthMap(self, frame: np.ndarray) -> np.ndarray:
+        """ Runs inference on a single frame and returns the raw depth map.
+
+        Args:
+            frame (np.ndarray): Input image as a BGR array of shape (H, W, 3)
+        Returns:
+            np.ndarray: Raw depth map as a float32 array of shape (H, W)
+        """
         with torch.no_grad():
             depth = self.model.infer_image(frame)
             depthData = depth.astype(np.float32)
 
         return depthData
 
-    def saveDepthMap(self, depthMap: np.ndarray, outputDir: str, name: str = "depth") -> None:
-        os.makedirs(outputDir, exist_ok=True)
 
-        npyPath = os.path.join(outputDir, f"{name}.npy")
-        np.save(npyPath, depthMap)
+def computeDepthMap(npyPath: str, firstFrame: np.ndarray, modelPath: str, libPath: str, outputDir: str) -> np.ndarray:
+    """ 
+    Runs depth estimation inference on a single frame and returns the raw depth map. Saves a debug PNG if DEPTH_DEBUG is enabled.
 
-        depth_norm = (depthMap - depthMap.min()) / (depthMap.max() - depthMap.min())
-        depth_vis = (depth_norm * NORM_MAX).astype(UINT8_DTYPE)
-        depth_color = cv2.applyColorMap(depth_vis, COLORMAP)
-        pngPath = os.path.join(outputDir, f"{name}.png")
-        cv2.imwrite(pngPath, depth_color)
+    Args:
+        npyPath (str): Path to the .npy file used to check if depth map already exists
+        firstFrame (np.ndarray): First frame of the video on which inference is performed
+        modelPath (str): Path to the DepthAnythingV2 model weights file
+        libPath (str): Path to the DepthAnythingV2 library directory
+        outputDir (str): Directory where the debug PNG is saved if DEPTH_DEBUG is enabled
 
-
-def loadOrComputeDepthMap(npyPath: str, firstFrame: np.ndarray, modelPath: str, libPath: str, outputDir: str, name: str = "base_depth") -> np.ndarray:
-    if os.path.exists(npyPath):
-        print("DepthV2: loaded depth map from base_depth.npy file.")
-        return np.load(npyPath)
-    
-    print("DepthV2: computing depth map from scratch.")
-    depthProcessor = DepthV2(modelPath=modelPath, libPath=libPath)
-    baseDepthMap = depthProcessor.getDepthMap(firstFrame)
-    depthProcessor.saveDepthMap(baseDepthMap, outputDir, name=name)
-    return baseDepthMap
-
-
-def rankCarsByDepth(depthMap: np.ndarray, cars: list[dict]) -> list[dict]:
+    Returns:
+        np.ndarray: Raw depth map (where depth images of possible vehicles can be visible) as a float32 array.
     """
-    cars: list of dicts with keys 'id', 'x1', 'y1', 'x2', 'y2'
-    returns: list of dicts with keys 'id', 'depth', sorted by depth (closest first)
+    if not os.path.exists(npyPath):
+        print("DepthV2: computing depth map from scratch.")
+        depthProcessor = DepthV2(modelPath=modelPath, libPath=libPath)
+        rawDepthMap = depthProcessor.getDepthMap(firstFrame)
+        if DEPTH_DEBUG:
+            saveDepthDebugPng(rawDepthMap, outputDir, name="raw_depth")
+        return rawDepthMap
+    else:
+        print("DepthV2: depth map already exists, computing should be done via setup script.")
+
+
+def removeVehiclesFromDepthMap(depthMap: np.ndarray, bboxes: list[dict], paddingFactor: float = 0.05, useMedian: bool = True) -> np.ndarray:
+    """ 
+    Cleans a raw depth map of cars depth images by replacing every row with a value equal to the median or mean of that row's background pixels, excluding detected bounding boxes.
+
+    Args:
+        depthMap (np.ndarray): Raw depth map where depth images of possible vehicles can be visible
+        bboxes (list[dict]): List of bounding boxes of possible vehicles
+        paddingFactor (float): Fraction of bounding box size as padding
+        useMedian (bool): Median or mean value
+
+    Returns:
+        np.ndarray: Depth map where every row is filled with a uniform value equal to the median or mean of that row's background pixels.
     """
-    results = []
-    h, w = depthMap.shape
-
-    for car in cars:
-        x1 = max(0, min(int(car['x1']), w - 1))
-        x2 = max(0, min(int(car['x2']), w - 1))
-        y1 = max(0, min(int(car['y1']), h - 1))
-        y2 = max(0, min(int(car['y2']), h - 1))
-
-        region = depthMap[y1:y2, x1:x2]
-        avg_depth = float(np.mean(region)) if region.size > 0 else 0.0
-
-        results.append({'id': car['id'], 'depth': avg_depth})
-
-    results.sort(key=lambda x: x['depth'], reverse=True)
-    return results
-
-def rankCarsObjectsByDepth(depthMap: np.ndarray, cars: list[dict], carsDict: dict) -> list:
-    """
-    cars: list of dicts with keys 'id', 'x1', 'y1', 'x2', 'y2' (from current frame YOLO)
-    carsDict: dictionary of Car objects
-    returns: sorted list of Car objects from closest to farthest
-    """
-    results = []
-    h, w = depthMap.shape
-
-    for car in cars:
-        if car['id'] not in carsDict:
-            continue
-
-        x1 = max(0, min(int(car['x1']), w - 1))
-        x2 = max(0, min(int(car['x2']), w - 1))
-        y1 = max(0, min(int(car['y1']), h - 1))
-        y2 = max(0, min(int(car['y2']), h - 1))
-
-        region = depthMap[y1:y2, x1:x2]
-        avg_depth = float(np.mean(region)) if region.size > 0 else 0.0
-
-        results.append((carsDict[car['id']], avg_depth))
-
-    results.sort(key=lambda x: x[1], reverse=True)
-    return [car for car, _ in results]
-
-# 3 of functions below are responsible for the same thing: filling the bboxes in the depth map when car is detecte to make clear depth map for the first frame
-# Choose one of them
-
-def fillBboxesRowMin(depthMap: np.ndarray, bboxes: list[dict], paddingFactor: float = 0.05) -> np.ndarray:
-    """
-    For each bbox, fills the area of the bbox row by row, with the minimum value of each row in that bbox, 
-    """
-    result = depthMap.copy()
-    h, w = result.shape
-
-    for bbox in bboxes:
-        bboxW = int(bbox['x2']) - int(bbox['x1'])
-        bboxH = int(bbox['y2']) - int(bbox['y1'])
-        padX = int(bboxW * paddingFactor)
-        padY = int(bboxH * paddingFactor)
-
-        x1 = max(0, min(int(bbox['x1']) - padX, w - 1))
-        x2 = max(0, min(int(bbox['x2']) + padX, w - 1))
-        y1 = max(0, min(int(bbox['y1']) - padY, h - 1))
-        y2 = max(0, min(int(bbox['y2']) + padY, h - 1))
-
-        if y2 <= y1 or x2 <= x1:
-            continue
-
-        for row in range(y1, y2):
-            rowMin = float(np.min(result[row, x1:x2]))
-            result[row, x1:x2] = rowMin
-
-    return result
-
-def fillBboxesRowMinMasked(depthMap: np.ndarray, bboxes: list[dict], paddingFactor: float = 0.05, maskDilation: int = 15) -> np.ndarray:
-    """
-    Get the contour of the car inside the bbox and fill only the interior of that contour with the whole bbox row minimum, 
-    Outiside the contour, inside the bbox remains with the original depth values.
-    """
-    result = depthMap.copy()
-    h, w = result.shape
-
-    for bbox in bboxes:
-        bboxW = int(bbox['x2']) - int(bbox['x1'])
-        bboxH = int(bbox['y2']) - int(bbox['y1'])
-        padX = int(bboxW * paddingFactor)
-        padY = int(bboxH * paddingFactor)
-
-        x1 = max(0, min(int(bbox['x1']) - padX, w - 1))
-        x2 = max(0, min(int(bbox['x2']) + padX, w - 1))
-        y1 = max(0, min(int(bbox['y1']) - padY, h - 1))
-        y2 = max(0, min(int(bbox['y2']) + padY, h - 1))
-
-        if y2 <= y1 or x2 <= x1:
-            continue
-
-        region = result[y1:y2, x1:x2]
-        if region.size == 0:
-            continue
-
-        roi_min, roi_max = region.min(), region.max()
-        if roi_max == roi_min:
-            continue
-            
-        roi_norm = ((region - roi_min) / (roi_max - roi_min) * 255).astype(np.uint8)
-        _, binary_mask = cv2.threshold(roi_norm, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        if contours:
-            largest_contour = max(contours, key=cv2.contourArea)
-            car_mask = np.zeros_like(binary_mask)
-            cv2.drawContours(car_mask, [largest_contour], -1, 255, thickness=cv2.FILLED)
-            if maskDilation > 0:
-                kernel = np.ones((maskDilation, maskDilation), np.uint8)
-                car_mask = cv2.dilate(car_mask, kernel, iterations=1)
-
-            # Each row inside the contour gets the min value of that row in the original region (bbox area)
-            rowMins = np.min(region, axis=1, keepdims=True)
-            artificial_bg = np.broadcast_to(rowMins, region.shape)
-            
-            result[y1:y2, x1:x2] = np.where(car_mask == 255, artificial_bg, region)
-
-    return result
-
-def fillBboxesRowMinMasked_hybrid(depthMap: np.ndarray, bboxes: list[dict], paddingFactor: float = 0.05, maskDilation: int = 15) -> np.ndarray:
-    """
-    Get the contour of the car inside the bbox and fill only the interior of that contour 
-    with mean value from the area between the contour and the bbox edge, if there are at least minBgPixels pixels of background,
-    otherwise fill with the whole bbox row minimum, 
-    Outiside the contour, inside the bbox remains with the original depth values.
-    """
-    minBgPixels = 5
-
-    result = depthMap.copy()
-    h, w = result.shape
-
-    for bbox in bboxes:
-        bboxW = int(bbox['x2']) - int(bbox['x1'])
-        bboxH = int(bbox['y2']) - int(bbox['y1'])
-        padX = int(bboxW * paddingFactor)
-        padY = int(bboxH * paddingFactor)
-
-        x1 = max(0, min(int(bbox['x1']) - padX, w - 1))
-        x2 = max(0, min(int(bbox['x2']) + padX, w - 1))
-        y1 = max(0, min(int(bbox['y1']) - padY, h - 1))
-        y2 = max(0, min(int(bbox['y2']) + padY, h - 1))
-
-        if y2 <= y1 or x2 <= x1:
-            continue
-
-        region = result[y1:y2, x1:x2]
-        if region.size == 0:
-            continue
-
-        roi_min, roi_max = region.min(), region.max()
-        if roi_max == roi_min:
-            continue
-            
-        roi_norm = ((region - roi_min) / (roi_max - roi_min) * 255).astype(np.uint8)
-        _, binary_mask = cv2.threshold(roi_norm, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        if contours:
-            largest_contour = max(contours, key=cv2.contourArea)
-            car_mask = np.zeros_like(binary_mask)
-            cv2.drawContours(car_mask, [largest_contour], -1, 255, thickness=cv2.FILLED)
-            if maskDilation > 0:
-                kernel = np.ones((maskDilation, maskDilation), np.uint8)
-                car_mask = cv2.dilate(car_mask, kernel, iterations=1)
-
-            # Each row inside the contour gets either the mean value from the area between the contour and the bbox edge (if enough background pixels) or the min value of that row in the original region (bbox area)            
-            only_background = region.copy()
-            only_background[car_mask == 255] = np.nan
-            bg_pixels_count = np.sum(~np.isnan(only_background), axis=1, keepdims=True)
-
-            with np.errstate(all='ignore'):
-                row_means = np.nanmean(only_background, axis=1, keepdims=True)
-            
-            row_mins = np.min(region, axis=1, keepdims=True)
-            hybrid_rows = np.where(bg_pixels_count >= minBgPixels, row_means, row_mins)
-            hybrid_rows = np.nan_to_num(hybrid_rows, nan=np.nanmin(row_mins))
-
-            artificial_bg = np.broadcast_to(hybrid_rows, region.shape)
-            result[y1:y2, x1:x2] = np.where(car_mask == 255, artificial_bg, region)
-
-    return result
-
-
-# Alternative: changes depth values for the whole row of the whole depth map based on median from row without pixels from bboxes
-def flattenRowsMedianBackground(depthMap: np.ndarray, bboxes: list[dict], paddingFactor: float = 0.05, useMedian: bool = True) -> np.ndarray:
-    
     result = depthMap.copy()
     h, w = result.shape
 
@@ -302,18 +140,75 @@ def flattenRowsMedianBackground(depthMap: np.ndarray, bboxes: list[dict], paddin
     return result
 
 
-def saveDepthVisualization(depthMap: np.ndarray, outputDir: str, name: str = "depth") -> None:
-    """Saves only the PNG visualization of a depth map."""
+def saveDepthMap(depthMap: np.ndarray, npyDir: str, outputDir: str, name: str = "base_depth") -> None:
+    """ 
+    Saves the depth map to a .npy file and optionally saves a debug PNG if DEPTH_DEBUG is enabled.
+
+    Args:
+        depthMap (np.ndarray): Depth map to save
+        npyDir (str): Where the .npy file is saved
+        outputDir (str): Where the debug PNG is saved if DEPTH_DEBUG is enabled
+    """
+    os.makedirs(npyDir, exist_ok=True)
+    npyPath = os.path.join(npyDir, f"{name}.npy")
+    np.save(npyPath, depthMap)
+
+    if DEPTH_DEBUG:
+        print(f"DepthV2: saved depth map -> {npyPath}")
+        saveDepthDebugPng(depthMap, outputDir, name=name)
+
+
+def loadDepthMap(npyPath: str) -> np.ndarray:
+    """ Loads a precomputed depth map from a .npy file.
+    Args:
+        npyPath (str): Path to the .npy file containing the depth map
+    Returns:
+        np.ndarray: Depth map as a float32 array of shape (H, W)
+    """
+    if not os.path.exists(npyPath):
+        raise FileNotFoundError(f"Depth map not found: {npyPath}. Run setup.py first.")
+    print(f"DepthV2: loaded depth map from {npyPath} file.")
+    return np.load(npyPath)
+
+
+def rankCarsByDepth(depthMap: np.ndarray, cars: list[dict]) -> list[dict]:
+    """ Ranks vehicles by their average depth value extracted from the depth map.
+
+    Args:
+        depthMap (np.ndarray): Depth map as a float32 array of shape (H, W)
+        cars (list[dict]): List of detected vehicles, each with keys 'id', 'x1', 'y1', 'x2', 'y2'.
+
+    Returns:
+        list[dict]: List of dicts with keys 'id' and 'depth', sorted by depth.
+    """
+    results = []
+    h, w = depthMap.shape
+
+    for car in cars:
+        x1 = max(0, min(int(car['x1']), w - 1))
+        x2 = max(0, min(int(car['x2']), w - 1))
+        y1 = max(0, min(int(car['y1']), h - 1))
+        y2 = max(0, min(int(car['y2']), h - 1))
+
+        region = depthMap[y1:y2, x1:x2]
+        avg_depth = float(np.mean(region)) if region.size > 0 else 0.0
+
+        results.append({'id': car['id'], 'depth': avg_depth})
+
+    results.sort(key=lambda x: x['depth'], reverse=True)
+    return results
+
+
+def saveDepthDebugPng(depthMap: np.ndarray, outputDir: str, name: str = "depth") -> None:
+    """ Saves a colorized PNG visualization of a depth map for debugging purposes.
+    Args:
+        depthMap (np.ndarray): Depth map to visualize
+        outputDir (str): Directory where the PNG file is saved
+    """
     os.makedirs(outputDir, exist_ok=True)
     depth_norm = (depthMap - depthMap.min()) / (depthMap.max() - depthMap.min())
     depth_vis = (depth_norm * NORM_MAX).astype(UINT8_DTYPE)
     depth_color = cv2.applyColorMap(depth_vis, COLORMAP)
     pngPath = os.path.join(outputDir, f"{name}.png")
     cv2.imwrite(pngPath, depth_color)
-    print(f"DepthV2: saved visualization -> {pngPath}")
-
-    plt.imshow(depthMap, cmap='magma', interpolation='nearest')
-    plt.colorbar(label='Depth')
-    plt.title('Edited Depth Map Heatmap')
-    plt.axis('off')
-    plt.show()
+    print(f"DepthV2: saved debug PNG -> {pngPath}")
