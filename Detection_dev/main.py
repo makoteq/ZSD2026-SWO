@@ -166,7 +166,7 @@ if __name__ == "__main__":
 
     overtakingLineY = None
     overtakingLineTriggered = False
-    OVERTAKING_LINE_THRESHOLD = 80.0
+    OVERTAKING_LINE_THRESHOLD = 60.0
     closestRadarDistance = float('inf')
 
     prevZoneRanking: List[int] = []
@@ -335,7 +335,7 @@ if __name__ == "__main__":
                 cars_in_zone = [
                     {'id': tid, 'x1': int(box[0]), 'y1': int(box[1]), 'x2': int(box[2]), 'y2': int(box[3])}
                     for tid, box in zip(trackIds, boxesXyxy)
-                    if overtakingLineY is not None and int(box[1]) >= overtakingLineY
+                    if overtakingLineY is not None and int(box[3]) >= overtakingLineY
                 ]
                 
                 ranked = rankCarsByDepth(baseDepthMap, cars_in_zone)
