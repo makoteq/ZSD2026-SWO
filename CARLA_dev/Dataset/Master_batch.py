@@ -120,8 +120,6 @@ video_path = None
 radar_log_path = None
 session_log_path = None
 
-
-
 _rec_lock = threading.Lock()
 _recording_active = False
 
@@ -136,6 +134,7 @@ CAMERA_JPEG_QUALITY = 95
 
 # destroys cars safely, if code tried to destroy a none existent actor carla would break
 def safe_destroy_actor(actor):
+    """Safely stop and destroy a CARLA actor, ignoring missing/already-destroyed errors."""
     if actor is None:
         return
     try:
@@ -159,6 +158,7 @@ def safe_destroy_actor(actor):
 
 
 def safe_destroy_vehicles_batch(world, client):
+    """Destroy all vehicles in the world using a batch command, ignoring missing-actor errors."""
     try:
         vehicles = world.get_actors().filter("vehicle.*")
         ids = [a.id for a in vehicles]
@@ -181,6 +181,7 @@ def safe_destroy_vehicles_batch(world, client):
 # recording and misc ---------------------------------------------------------------------
 
 def weather_for_run(global_run_idx: int):
+    """Return (tag, name, preset) for the given run index based on WEATHER_PLAN."""
     tag = WEATHER_PLAN[(global_run_idx - 1) % len(WEATHER_PLAN)]
     preset_key = WEATHER_TAGS.get(tag, "1")
     name, preset = WEATHER_PRESETS[preset_key]
@@ -188,6 +189,7 @@ def weather_for_run(global_run_idx: int):
 
 
 def start_recording(run_dir: str):
+    """Initialize output files and frame buffer for a new recording session."""
     global video_writer, radar_csv_file, radar_csv_writer
     global output_dir, video_path, radar_log_path
     global camera_frame_dir, camera_frame_idx, camera_first_ts, camera_last_ts
@@ -221,6 +223,7 @@ def start_recording(run_dir: str):
 
 
 def stop_recording():
+    """Flush and close all open recording resources."""
     global video_writer, radar_csv_file, radar_csv_writer
     global output_dir, video_path, radar_log_path
     global camera_frame_dir, camera_frame_idx, camera_first_ts, camera_last_ts
@@ -254,6 +257,7 @@ def stop_recording():
 
 
 def finalize_recording(run_dir: str):
+    """Assemble saved JPEG frames into an MP4 using ffmpeg."""
     global camera_frame_dir, camera_frame_idx, camera_first_ts, camera_last_ts
 
     frame_dir = camera_frame_dir
@@ -299,6 +303,7 @@ def finalize_recording(run_dir: str):
 
 #for data synchronization
 def _get_or_set_start_time(sim_timestamp: float):
+    """Return elapsed time since recording start, setting the start time on first call."""
     global run_start_sim_time
     t0 = run_start_sim_time
     if t0 is not None:
@@ -310,6 +315,7 @@ def _get_or_set_start_time(sim_timestamp: float):
 
 
 def radar_callback_builder(pitch, radar_actor_ref):
+    """Return a radar sensor callback that writes point cloud data to CSV."""
     def radar_callback(sensor_data):
         global radar_csv_writer, run_start_sim_time, _recording_active
         if radar_csv_writer is None or radar_actor_ref[0] is None or not _recording_active:
@@ -349,6 +355,7 @@ def radar_callback_builder(pitch, radar_actor_ref):
 
 
 def camera_callback(image):
+    """Save each incoming camera frame as a JPEG and update timestamp bookmarks."""
     global _recording_active
     global camera_frame_dir, camera_frame_idx, camera_first_ts, camera_last_ts
 
@@ -377,6 +384,7 @@ def camera_callback(image):
 
 
 def safe_callback_wrapper(fn):
+    """Wrap a sensor callback to catch and log any exceptions without crashing."""
     def _wrapped(data):
         try:
             fn(data)
@@ -389,6 +397,7 @@ def safe_callback_wrapper(fn):
 
 # enviroment and blueprint presets ----------------------------------------------------------------
 def draw_debug_side_lines(world):
+    """Draw persistent lane boundary lines in the CARLA world for visual debugging."""
     if not DRAW_DEBUG_LINES:
         return
 
@@ -404,12 +413,14 @@ def draw_debug_side_lines(world):
 
 
 def apply_radar_preset(radar_bp, preset_name: str):
+    """Apply a named radar preset from RADAR_PRESETS to a blueprint."""
     preset = RADAR_PRESETS[preset_name]
     for k, v in preset.items():
         radar_bp.set_attribute(k, v)
 
 
 def setup_environment(client):
+    """Load Town02, configure weather, hide clutter objects, and prepare sensor blueprints."""
     world = client.load_world('Town02')
     world.set_weather(carla.WeatherParameters.CloudySunset)
 
@@ -452,6 +463,7 @@ def setup_environment(client):
 
 
 def spawn_sensors_fixed(world, camera_bp, radar_bp):  # todo remove const and add random
+    """Spawn camera and radar actors at fixed positions and attach their callbacks."""
     global radar_actor
 
     cam = carla.Transform(
@@ -482,6 +494,7 @@ def spawn_sensors_fixed(world, camera_bp, radar_bp):  # todo remove const and ad
 
 # for saving sensor config to find best param
 def save_sensor_config(run_dir, camera_bp, radar_bp, camera_transform, radar_transforms):
+    """Save camera and radar configuration to sensor_config.json in run_dir."""
     manifest_path = os.path.join(run_dir, "sensor_config.json")
 
     radar_cfgs = []
@@ -513,6 +526,7 @@ def save_sensor_config(run_dir, camera_bp, radar_bp, camera_transform, radar_tra
 
 
 def init_batch_output():
+    """Create a timestamped output directory and initialize the run log CSV."""
     global session_log_path
 
     session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -539,6 +553,7 @@ def init_batch_output():
 
 
 def append_run_log(row):
+    """Append a single result row to the session run log CSV."""
     with open(session_log_path, "a", newline="", encoding="utf-8") as f:
         csv.writer(f).writerow(row)
 
@@ -546,6 +561,7 @@ def append_run_log(row):
 # main =====================================================================================
 
 def main():
+    """Run all configured scenarios, recording camera and radar data for each sample."""
     client = carla.Client("localhost", 2000)
     client.set_timeout(20.0)
 

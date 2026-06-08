@@ -27,24 +27,26 @@ PASS_GAP_X = 10
 CUTIN_Y_TOL = 0.5
 
 
-
-
 # Utils
 def destroy_all_vehicles(world):
+    """Destroy all living vehicles in the world."""
     for a in world.get_actors().filter('vehicle.*'):
         if a.is_alive:
             a.destroy()
 
 def speed_ms(vehicle):
+    """Return vehicle speed in m/s."""
     v = vehicle.get_velocity()
     return math.sqrt(v.x**2 + v.y**2 + v.z**2)
 
 def speed_kph(vehicle):
+    """Return vehicle speed in km/h."""
     v = vehicle.get_velocity()
     ms = math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
     return ms*3.6
 
-def apply_speed(vehicle, target_speed, steer = 0.0):
+def apply_speed(vehicle, target_speed, steer=0.0):
+    """Apply throttle/brake to reach target_speed (km/h) with optional steering."""
     target_speed = target_speed/3.6
     v = speed_ms(vehicle)
     delta = target_speed - v
@@ -73,7 +75,8 @@ def apply_speed(vehicle, target_speed, steer = 0.0):
         manual_gear_shift=False
     ))
 
-def steer_to_y(y_target, y_current, y_err_prev,  kp=0.1, kd=0.25, limit=0.14):
+def steer_to_y(y_target, y_current, y_err_prev, kp=0.1, kd=0.25, limit=0.14):
+    """Return PD steering command and current error to track a target lateral position."""
     y_err = y_target - y_current
     d_err = y_err - y_err_prev
     steer = kp * y_err + kd * d_err
@@ -83,6 +86,7 @@ def steer_to_y(y_target, y_current, y_err_prev,  kp=0.1, kd=0.25, limit=0.14):
 # Main
 
 def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
+    """Run an overtake scenario: fast car cruises, boosts, cuts in front of slow car."""
     destroy_all_vehicles(world)
 
     bp_fast = blueprint_library.find('vehicle.dodge.charger_2020')

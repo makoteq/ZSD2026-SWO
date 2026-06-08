@@ -19,20 +19,24 @@ TARGET_MAX_KPH = 90
 
 # Utils
 def destroy_all_vehicles(world):
+    """Destroy all living vehicles in the world."""
     for a in world.get_actors().filter('vehicle.*'):
         if a.is_alive:
             a.destroy()
 
 def speed_ms(vehicle):
+    """Return vehicle speed in m/s."""
     v = vehicle.get_velocity()
     return math.sqrt(v.x**2 + v.y**2 + v.z**2)
 
 def speed_kph(vehicle):
+    """Return vehicle speed in km/h."""
     v = vehicle.get_velocity()
     ms = math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
     return ms*3.6
 
-def apply_speed(vehicle, target_speed, steer = 0.0):
+def apply_speed(vehicle, target_speed, steer=0.0):
+    """Apply throttle/brake to reach target_speed (km/h) with optional steering."""
     target_speed = target_speed/3.6
     v = speed_ms(vehicle)
     delta = target_speed - v
@@ -41,7 +45,6 @@ def apply_speed(vehicle, target_speed, steer = 0.0):
     max_throttle = 0.85         #max throttle
     reg_brake = 0.25
     max_brake = 0.4
-
 
     if delta >= 0.5:
         throttle = min(max_throttle, reg_throttle*delta)
@@ -64,12 +67,12 @@ def apply_speed(vehicle, target_speed, steer = 0.0):
 
 
 def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
+    """Spawn a single vehicle and drive it at a random speed above the limit until it crosses the finish line."""
     destroy_all_vehicles(world)
 
     v1_model = blueprint_library.find('vehicle.dodge.charger_2020')
     lane_y = random.choice([LANE_A_Y, LANE_B_Y])
     #lane_y = LANE_A_Y
-
 
     t1 = carla.Transform(carla.Location(x=START_X, y=lane_y, z=SPAWN_Z), carla.Rotation(yaw=YAW))
     v1 = world.try_spawn_actor(v1_model, t1)

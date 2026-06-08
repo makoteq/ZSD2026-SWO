@@ -27,6 +27,7 @@ SAFE_DISTANCE_M = 12.0
 #-----------------------------------------------------------------------------------------------------------------------
 # Filter to only select passenger cars
 def get_random_car_blueprint(blueprint_library):
+    """Return a random passenger car blueprint, excluding bikes, vans, and trucks."""
     cars = []
     for bp in blueprint_library.filter("vehicle.*"):
         # Exclude bikes, wheelchairs etc.
@@ -45,11 +46,13 @@ def get_random_car_blueprint(blueprint_library):
 
 
 def get_speed_ms(actor):
+    """Return the current speed of an actor in m/s."""
     v = actor.get_velocity()
     return math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
 
 
 def run(world, blueprint_library, duration_sec=120.0, output_dir=None):
+    """Spawn and regulate normal traffic for duration_sec seconds, then save spawn count."""
     spawned_count = 0
     active_vehicles_data = []
 
