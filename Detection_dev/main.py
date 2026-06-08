@@ -31,8 +31,8 @@ with open(CONFIG_JSON_PATH, "r", encoding="utf-8") as f:
     cfg = json.load(f)
 
 # Control
-VIDEO_PATH = os.path.join(DATA_DIR, "8_Control.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "8_Control---6.0.csv")
+VIDEO_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_AB/2_AB.mp4")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/alarm/2_AB/2_AB---6.0.csv")
 
 CSV_PATH = os.path.join(DATA_DIR, SCENARIO, "car.csv")
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
@@ -63,7 +63,7 @@ TEXT_POSITION_X: Final[int] = 20
 TEXT_POSITION_Y_START: Final[int] = 30
 TEXT_LINE_SPACING: Final[int] = 30
 
-SPEED_LIMIT_KMH: Final[float] = 80.0
+SPEED_LIMIT_KMH: Final[float] = 50.0
 SPEED_LIMIT: Final[float] = SPEED_LIMIT_KMH / 3.6
 
 # radar
