@@ -16,7 +16,7 @@ from algorithms.lane_detection.lane_detector import LaneDetector
 #from utils.points import build_lines_equations
 from utils.car import Car
 from utils.radar import SENSOR_PITCH_DEG, SENSOR_YAW_DEG, Radar
-from utils.depth_v2 import DepthV2, loadOrComputeDepthMap, rankCarsByDepth, flattenRowsMedianBackground, saveDepthVisualization
+from utils.depth_v2 import loadDepthMap, rankCarsByDepth
 from datetime import date
 from utils.weather import calcStoppingDistance, getWeather
 from utils.utils import detectOvertaking, drawCustomBox, plotRadarComparison, save_car_to_csv, \
@@ -77,7 +77,7 @@ OUTPUT_VIDEO_PATH = os.path.join(DATA_DIR, "output", "trajectory.mp4")
 DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth")
 DEPTH_LIB_PATH = os.path.join(DATA_DIR, "models", "Depth-Anything-V2")
 DEPTH_OUTPUT_DIR = os.path.join(DATA_DIR, "output", "depth_maps")
-NPY_PATH = os.path.join(DEPTH_OUTPUT_DIR, "base_depth.npy")
+NPY_PATH = os.path.join(DATA_DIR, "config", "base_depth.npy")
 LINES_JSON_PATH = os.path.join(DATA_DIR, SCENARIO, "lines.json") # always delete lines.json file if video path is changed
 
 
@@ -282,34 +282,11 @@ def run_single_recording(
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(output_video_path, fourcc, int(fps), (frameWidth, frameHeight))
 
-    # Depth map for the first frame
-    cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
-    _, firstFrame = cap.read()
-    cap.set(cv2.CAP_PROP_POS_FRAMES, int(START_TIME * fps))
-
-    os.makedirs(depth_output_dir, exist_ok=True)
+    # Depth map
     if precomputed_depth_map is not None:
         baseDepthMap = precomputed_depth_map
-        depthMapComputed = False
     else:
-        depthMapComputed = not os.path.exists(npy_path)
-        baseDepthMap = loadOrComputeDepthMap(npy_path, firstFrame, DEPTH_MODEL_PATH, DEPTH_LIB_PATH, depth_output_dir)
-
-    firstFrameResults = model.predict(
-        source=firstFrame,
-        imgsz=IMGSZ,
-        conf=CONF_THRESHOLD,
-        verbose=False,
-        device=0 if device == 'cuda' else 'cpu',
-        classes=ALLOWED_CLASSES_IDS,
-    )
-    firstFrameBboxes = [
-        {'x1': box[0], 'y1': box[1], 'x2': box[2], 'y2': box[3]}
-        for box in firstFrameResults[0].boxes.xyxy.cpu().numpy()
-    ] if firstFrameResults[0].boxes is not None else []
-    baseDepthMap = flattenRowsMedianBackground(baseDepthMap, firstFrameBboxes, paddingFactor=0.05)
-    if depthMapComputed:
-        saveDepthVisualization(baseDepthMap, depth_output_dir, name="base_depth_filled")
+        baseDepthMap = loadDepthMap(npy_path)
 
     carsDict: Dict[int, Car] = {}
     frameIndex = 0
@@ -652,7 +629,7 @@ def run_batch(model: YOLO, device: str) -> None:
             folder_label,
             f"{index:03d}_{Path(video_path).stem}",
         )
-        npy_path = os.path.join(depth_output_dir, "base_depth.npy")
+        npy_path = NPY_PATH
 
         alarm_detected, alarm_reasons, detected_lines, road_width_h0_px, overtaking_line_y, depth_map = run_single_recording(
             model=model,

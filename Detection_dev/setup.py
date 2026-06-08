@@ -20,7 +20,7 @@ DATA_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_PATH, "..", "data"))
 
 #path to control data
 VIDEO_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_Control/1_Control.mp4")
-RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_Control/1_Control--6.0.csv")
+RADAR_CSV_PATH = os.path.join(DATA_DIR, "dataset/noalarm/1_Control/1_Control---6.0.csv")
 
 YOLO_MODEL_PATH = os.path.join(DATA_DIR, "models", "best.pt")
 DEPTH_MODEL_PATH = os.path.join(DATA_DIR, "models", "depth_anything_v2_vits.pth")
