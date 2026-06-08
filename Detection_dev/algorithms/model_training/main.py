@@ -37,6 +37,15 @@ EXIT_KEY = ord('q')
 
 
 class Car:
+    """
+    Represents a tracked vehicle in the video stream.
+
+    Stores the vehicle's position, bounding box dimensions, tracking history,
+    classification type, and kinematic properties such as speed and braking distance.
+    Classification is performed using a CNN model whenever a higher-confidence
+    detection is observed.
+    """
+
     CATEGORY_MAP: Dict[int, str] = {
         0: "coupe",
         1: "hatchback",
@@ -48,6 +57,12 @@ class Car:
     IMG_SIZE: Tuple[int, int] = (128, 128)
 
     def __init__(self, trackId: int):
+        """
+        Initialize a Car instance with a given tracking ID.
+
+        Args:
+            trackId: Unique identifier assigned by the tracker to this vehicle.
+        """
         self.trackId = trackId
         self.x = 0.0
         self.y = 0.0
@@ -65,6 +80,22 @@ class Car:
         self.breakingDistance = 0.0
 
     def checkType(self, frame: np.ndarray) -> Tuple[str, float, np.ndarray, float]:
+        """
+        Classify the vehicle type from a cropped frame region using the CNN model.
+
+        The frame is resized to IMG_SIZE, normalized to [0, 1], and passed through
+        the CNN. The model returns class probabilities and a braking coefficient k.
+
+        Args:
+            frame: BGR image array containing the cropped vehicle region.
+
+        Returns:
+            A tuple of:
+                - category (str): Predicted vehicle category name.
+                - confidence (float): Probability of the predicted class.
+                - classProbs (np.ndarray): Full array of class probabilities.
+                - kPred (float): Predicted braking coefficient k.
+        """
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         img = cv2.resize(img, self.IMG_SIZE)
         imgArr = np.array(img, dtype=np.float32) / 255.0
@@ -81,6 +112,20 @@ class Car:
         return category, confidence, classProbs, kPred
 
     def update(self, box: Tuple[float, float, float, float], confidence: float, frame: np.ndarray, frameIndex: int) -> None:
+        """
+        Update the vehicle's state with a new detection from the current frame.
+
+        Updates position, bounding box, confidence, and tracking history. If the
+        new detection has a higher confidence than any previous one, the vehicle
+        crop is re-classified using the CNN and the braking coefficient is updated.
+        Braking distance is recalculated after every update.
+
+        Args:
+            box: Bounding box in (cx, cy, w, h) format (center x/y plus width/height).
+            confidence: YOLO detection confidence score for this detection.
+            frame: Full BGR video frame from which the crop will be extracted.
+            frameIndex: Index of the current video frame (used for staleness tracking).
+        """
         self.updateCount += 1
         self.x, self.y, self.w, self.h = box
         self.lastConfidence = confidence
@@ -105,10 +150,32 @@ class Car:
         self.breakingDistance = self.calcBreakingDistance()
 
     def calcBreakingDistance(self) -> float:
+        """
+        Calculate the estimated braking distance for this vehicle.
+
+        Uses the kinematic formula: d = v² * k, where v is the current speed
+        and k is the vehicle-specific braking coefficient predicted by the CNN.
+
+        Returns:
+            Estimated braking distance in consistent units with speed and k.
+        """
         return (self.speed ** 2) * self.k
 
 
 def drawCustomBox(annotatedFrame: np.ndarray, boxXyxy: np.ndarray, trackId: int, conf: float, carType: str) -> None:
+    """
+    Draw a bounding box with a label overlay onto the annotated frame in-place.
+
+    Renders a white rectangle around the detected vehicle and a filled label
+    background displaying the vehicle type, track ID, and detection confidence.
+
+    Args:
+        annotatedFrame: BGR image array to draw onto (modified in-place).
+        boxXyxy: Bounding box coordinates as [x1, y1, x2, y2].
+        trackId: Unique tracker ID of the vehicle, shown in the label.
+        conf: Detection confidence score, shown in the label.
+        carType: Predicted vehicle category string, shown in the label.
+    """
     x1, y1, x2, y2 = map(int, boxXyxy)
     labelText = f"{carType} {trackId} | {conf:.2f}"
 
@@ -120,6 +187,21 @@ def drawCustomBox(annotatedFrame: np.ndarray, boxXyxy: np.ndarray, trackId: int,
 
 
 def main() -> None:
+    """
+    Run the main traffic analysis pipeline.
+
+    Opens the input video, initializes a VideoWriter for the output, and processes
+    each frame in a loop:
+
+    1. Runs YOLO tracking (ByteTrack) to detect and track vehicles.
+    2. Updates each tracked Car object with the latest bounding box and frame crop.
+    3. Draws bounding boxes, labels, and trajectory polylines on the annotated frame.
+    4. Removes stale or low-confidence tracks from the active dictionary.
+    5. Writes the annotated frame to the output video and displays it in a window.
+
+    The loop exits when the video ends, the user presses the exit key (q), or a
+    KeyboardInterrupt is received. All resources are released in the finally block.
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     cap = cv2.VideoCapture(VIDEO_PATH)
