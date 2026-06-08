@@ -1,5 +1,9 @@
 """
-Setup script to get the road parameters: depth, weather conditions, road geometry & detected lanes
+Initializes the processing pipeline and generates the runtime configuration.
+
+The script loads video and radar parameters, estimates lane geometry,
+retrieves environmental data, generates a reference depth map, and
+stores the resulting configuration for subsequent processing.
 """
 import os
 import json
@@ -38,7 +42,6 @@ ROAD_WIDTH_METERS = 7.0
 FOV = 20.0
 
 START_TIME = 0.0
-RADAR_DELAY = 0.0
 CONF_THRESHOLD = 0.8
 IMGSZ = 800
 ALLOWED_CLASSES_IDS = [0]
@@ -52,22 +55,27 @@ MASK_Y_MAX = 120.0
 LAT = 54.37163
 LON = 18.61898
 
-if __name__ == "__main__":
+def generate_configuration():
+    """
+    Generate the runtime configuration from video, radar,
+    weather, lane detection, and depth estimation data.
+    """
 
     # correctionFunc = plotYOffsetCorrelation(CSV_PATH)
 
     correctionFunc = lambda x: 0.0
     model = YOLO(YOLO_MODEL_PATH)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    radar_delay = 0.0
 
     with open(RADAR_CSV_PATH, 'r') as f:
         f.readline()
         first_line = f.readline().split(',')
-        RADAR_DELAY = float(first_line[0])
+        radar_delay = float(first_line[0])
     cap = cv2.VideoCapture(VIDEO_PATH)
     if not cap.isOpened():
         exit(1)
-    radar: Radar = Radar(RADAR_CSV_PATH, START_TIME + RADAR_DELAY)
+    radar: Radar = Radar(RADAR_CSV_PATH, START_TIME + radar_delay)
     radar.applyMask(MASK_Z_MIN, MASK_Z_MAX, MASK_Y_MIN, MASK_Y_MAX)
     radar.addNoise()
     radar.findLane()
@@ -138,3 +146,6 @@ if __name__ == "__main__":
 
     with open(CONFIG_JSON_PATH, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
+
+if __name__ == "__main__":
+    generate_configuration()
