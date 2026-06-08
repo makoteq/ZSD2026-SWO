@@ -74,7 +74,10 @@ _NUM_COLS = 8
 
 
 class Radar:
+    """Loads, corrects, clusters, and visualizes radar point cloud data from CSV."""
+
     def __init__(self, relativePath: str, start_time: float) -> None:
+        """Initialize Radar, load CSV data, apply corrections, and refresh cache."""
         self.relativePath: str = relativePath
         self.pointsSwap: np.ndarray = np.empty((0, 4), dtype=float)
         self.pointsSwapLabels: np.ndarray = np.empty((0,), dtype=int)
@@ -142,6 +145,7 @@ class Radar:
         return ci_x, ci_y, ci_z
 
     def loadData(self) -> None:
+        """Load and parse the CSV, auto-detect world columns, and populate _data."""
         basePath: str = os.path.dirname(os.path.abspath(__file__))
         self.csvPath: str = os.path.abspath(os.path.join(basePath, self.relativePath))
         if not os.path.exists(self.csvPath):
@@ -190,6 +194,7 @@ class Radar:
         self._data[:, _CI_ZCORR] = self._data[:, _CI_Z]
 
     def _refresh_cache(self) -> None:
+        """Rebuild _timeValues and _pointsValues from _data."""
         if self._data.shape[0] == 0:
             self._timeValues = np.empty((0,), dtype=float)
             self._pointsValues = np.empty((0, 4), dtype=float)
@@ -198,6 +203,7 @@ class Radar:
         self._pointsValues = self._data[:, [_CI_XCORR, _CI_YCORR, _CI_ZCORR, _CI_VEL]]
 
     def step(self, timeStep: float) -> None:
+        """Advance currentTime by timeStep and load the matching points into pointsSwap."""
         self.pointsSwap = np.empty((0, 4), dtype=float)
         self.pointsSwapLabels = np.empty((0,), dtype=int)
         if self._timeValues.size == 0:
@@ -212,6 +218,7 @@ class Radar:
         self.currentTime = endTime
 
     def clusterPoints(self) -> None:
+        """Run DBSCAN on pointsSwap and remove noise points (label == -1)."""
         if self.pointsSwap.size == 0:
             return
 
@@ -232,6 +239,7 @@ class Radar:
         self.pointsSwapLabels = labels[valid_mask]
 
     def visualizeClusteredStep(self) -> None:
+        """Plot the current clustered point cloud in 3D with lane boundary lines."""
         if self._data.shape[0] == 0:
             return
 
@@ -279,6 +287,7 @@ class Radar:
         plt.show(block=True)
 
     def calculateRoll(self, closeWindow: float = 20.0, farWindow: float = 20.0, numLowest: int = 10) -> float:
+        """Estimate sensor roll in degrees from height difference between near and far points."""
         if self._data.shape[0] == 0:
             return 0.0
         y = self._data[:, _CI_Y]
@@ -297,6 +306,7 @@ class Radar:
         return float(np.degrees(np.arctan2(deltaZ, deltaY)))
 
     def visualize(self) -> None:
+        """Plot the full corrected point cloud in 3D with lane boundaries."""
         if self._data.shape[0] == 0:
             print("No radar data to visualize.")
             return
@@ -345,6 +355,7 @@ class Radar:
         plt.show(block=True)
 
     def findLane(self):
+        """Compute and store lane bounding box from corrected X/Y extents."""
         if self._data.shape[0] == 0:
             return {"minX": 0.0, "maxX": 0.0, "minY": 0.0, "maxY": 0.0}
 
@@ -361,6 +372,7 @@ class Radar:
         self.lane_width_meters = maxX - minX
 
     def calculateYaw(self, closeWindow: float = 20.0, farWindow: float = 20.0) -> float:
+        """Estimate sensor yaw in degrees from lateral drift between near and far points."""
         if self._data.shape[0] == 0:
             return 0.0
 
@@ -383,6 +395,7 @@ class Radar:
         return float(np.degrees(np.arctan2(deltaX, deltaY)))
 
     def adjustPoints(self, pitch: float, yaw: float, roll: float, heightOffset: float) -> None:
+        """Apply yaw, pitch, and roll correction rotations to all points, then refresh cache."""
         pitchRad: float = np.radians(-pitch)
         yawRad: float = np.radians(-self.calculateYaw())
         rollRad: float = np.radians(-self.calculateRoll())
@@ -427,6 +440,7 @@ class Radar:
         self._refresh_cache()
 
     def addNoise(self) -> None:
+        """Perturb corrected point positions and velocities with uniform random noise."""
         if self._data.shape[0] == 0:
             return
 
@@ -455,6 +469,7 @@ class Radar:
         self._refresh_cache()
 
     def getClusterCenters(self) -> List[Dict[str, float]]:
+        """Return mean X, Y, Z, and velocity for each cluster in pointsSwap."""
         if self.pointsSwap.size == 0:
             return []
 
