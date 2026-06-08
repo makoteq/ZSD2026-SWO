@@ -18,6 +18,14 @@ ROAD_WIDTH_METERS = 7.0
 
 @dataclass
 class position:
+    """
+    Container including position data of the vehicle in a specific frame.
+
+    Attributes:
+        x (float): X position in meters.
+        y (float): Y position in meters.
+        frame (int): Frame index at which the measurement was taken.
+    """
     x: float
     y: float
     frame: int
@@ -25,12 +33,27 @@ class position:
 
 @dataclass
 class velocity:
+    """
+    Container including velocity data of the vehicle in a specific frame.
+
+    Attributes:
+        v (float): Velocity in m/s.
+        frame (int): Frame index at which the measurement was taken.
+    """
     v: float
     frame: int
 
 
 @dataclass
 class size:
+    """
+    Container including physical object dimensions estimated for a specific frame.
+
+    Attributes:
+        w (float): Estimated object width in meters.
+        h (float): Estimated object height in meters.
+        frame (int): Frame index at which the measurement was taken.
+    """
     w: float
     h: float
     frame: int
@@ -38,12 +61,22 @@ class size:
 
 @dataclass
 class stoppingDistance:
+    """
+    Container including estimated stopping distance data of the vehicle.
+    """
     distance: float
     mass: float
     car_category: str = 'medium'
 
 
 class Car:
+    """
+    Represents a tracked vehicle.
+
+    Stores image-space detections, radar measurements,
+    estimated world coordinates, velocity, dimensions,
+    stopping distance information, and lane departure state.
+    """
     def __init__(self, trackId: int):
         self.trackId = trackId
         self.x = 0.0
@@ -95,6 +128,12 @@ class Car:
         self.laneDepartureCount = 0
 
     def _laneBoundsAtY(self, detectedLines: List[Any], yValue: float) -> Union[Tuple[float, float], None]:
+        """
+        Compute lane boundary coordinates at a specified image Y position.
+
+        Returns:
+            Tuple[float, float] | None: Left and right lane boundaries in pixels.
+        """
         leftLine = next((line for line in detectedLines if line.get('name') == 'left_line'), None)
         rightLine = next((line for line in detectedLines if line.get('name') == 'right_line'), None)
 
@@ -131,6 +170,12 @@ class Car:
             centerX: Union[float, None] = None,
             centerY: Union[float, None] = None,
     ) -> bool:
+        """
+        Update lane occupancy state and detect lane departures.
+
+        Returns:
+            bool: True if a new lane departure event is detected.
+        """
         laneCenterX = float(self.x if centerX is None else centerX)
         laneCenterY = float(self.y if centerY is None else centerY)
 
@@ -152,10 +197,19 @@ class Car:
         return laneDepartureDetected
 
     def getCorrectedDistance(self, cameraDist: float) -> float:
+        """
+        Apply distance correction to a camera-based estimate.
+        """
         offset = self.correctionFunc(cameraDist)
         return float(cameraDist + offset)
 
     def calcDistance(self, detectedLines: List[Any], roadWidthH0Px: float, roadWidthMeters: float) -> float:
+        """
+        Estimate longitudinal distance using lane-width perspective scaling.
+
+        Returns:
+            float: Estimated distance in meters.
+        """
         yBottom = self.y + (self.h / 2.0)
         xLeft = (detectedLines[0]['m'] * yBottom) + detectedLines[0]['b']
         xRight = (detectedLines[1]['m'] * yBottom) + detectedLines[1]['b']
@@ -169,7 +223,15 @@ class Car:
         return float(distance)
 
     def getSize(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:
+        """
+        Estimate the real-world dimensions of the tracked object.
 
+        The calculation uses the detected lane geometry, estimated object
+        distance, camera field of view, and bounding-box dimensions.
+
+        Returns:
+            Tuple[float, float]: Estimated width and height in meters.
+        """
         yBottom = self.y + (self.h / 2.0)
 
         xLeft = (detectedLines[0]['m'] * yBottom) + detectedLines[0]['b']
@@ -202,6 +264,16 @@ class Car:
         return float(w_m), float(h_m)
 
     def calcPosition(self, detectedLines: List[Any], roadWidthH0Px: float) -> Tuple[float, float]:
+        """
+        Estimate the object's position in road coordinates.
+
+        The lateral position is computed relative to the detected lane
+        boundaries, while the longitudinal position is estimated from
+        perspective geometry.
+
+        Returns:
+            Tuple[float, float]: Position (x, y) in meters.
+        """
         yBottom = self.y + (self.h / 2.0)
         xCar = self.x
 
@@ -220,7 +292,25 @@ class Car:
     def update(self, box: Tuple[float, float, float, float], confidence: float, frame: np.ndarray, frameIndex: int,
                detectedLines: Any, roadWidthH0Px: float, fov: float, frameTime: float, imgSize: int, radar: Radar,
                CorrectionFunc: Callable[[float], float]) -> None:
+        """
+        Update object state using the latest detection.
 
+        Updates image-space coordinates, estimated world position,
+        physical dimensions, confidence score, and tracking metadata.
+
+        Parameters:
+            box: Bounding box coordinates.
+            confidence: Detection confidence score.
+            frame: Current video frame.
+            frameIndex: Frame index.
+            detectedLines: Detected lane boundaries.
+            roadWidthH0Px: Road width in image coordinates.
+            fov: Camera field of view.
+            frameTime: Frame duration.
+            imgSize: Input image size used for detection.
+            radar: Radar reference data.
+            CorrectionFunc: Distance correction function.
+        """
         self.x, self.y, self.w, self.h = box
         self.history.append((float(self.x), float(self.y)))
         self.frame_index = frameIndex

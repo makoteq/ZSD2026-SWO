@@ -1,14 +1,24 @@
 """
-Function takes location (latitude and longitude) and time and date
-and returns weather in selected place and selected time
+Weather utilities.
 
+Provides weather retrieval: weather condition
+classification, and road-condition-dependent stopping distance
+calculations.
+
+Attribution:
+Weather data by Open-Meteo.com
+https://open-meteo.com/
+
+Data license:
+CC BY 4.0
+https://creativecommons.org/licenses/by/4.0/
 """
 import requests
 from datetime import date
 from dataclasses import dataclass
 
-TODAY = date.today()
-
+# Multipliers used to adjust stopping distance calculations
+# according to estimated road surface conditions.
 ROAD_CONDITION_MULTIPLIER={
     "dry":    1,
     "rain":   1.7,
@@ -18,13 +28,28 @@ ROAD_CONDITION_MULTIPLIER={
 
 @dataclass
 class WeatherResult:
+    """
+    Container for weather data and derived road condition parameters.
+    """
     multiplier: float
     condition: str
     weatherCode: int
     temperature: float
     description: str
 
-def getWeather(lat, lon, targetDate, time):
+def getWeather(lat: float, lon: float, targetDate: date, time: int) -> WeatherResult:
+    """
+    Retrieve weather information for a given location and hour.
+
+    Parameters:
+        lat (float): Latitude in degrees.
+        lon (float): Longitude in degrees.
+        targetDate (date): Target date.
+        time (int): Hour of the day (0-23).
+
+    Returns:
+        WeatherResult: Weather data together with a road condition multiplier.
+    """
 
     today = date.today()
 
@@ -66,7 +91,7 @@ def getWeather(lat, lon, targetDate, time):
             description=description,
         )
 
-    except Exception as e:
+    except Exception:
         print("error getting weather, fallback to DRY")
         return WeatherResult(
             multiplier=ROAD_CONDITION_MULTIPLIER["dry"],
@@ -77,6 +102,17 @@ def getWeather(lat, lon, targetDate, time):
         )
 
 def calcStoppingDistance(speed: float, weatherMarkiplier: float = 1.0) -> float:
+    """
+    Estimate stopping distance based on vehicle speed and
+    road-condition multiplier.
+
+    Parameters:
+        speed (float): Vehicle speed in m/s.
+        weatherMarkiplier (float) : Multiplier representing road conditions.
+
+    Returns:
+        float: Estimated stopping distance in meters.
+    """
 
     if weatherMarkiplier == 1:
         reaction_time = 1.5
@@ -93,14 +129,19 @@ def calcStoppingDistance(speed: float, weatherMarkiplier: float = 1.0) -> float:
     return float(breaking_distance)
 
 
-def code_to_weather(code, temp):
-    #snow
+def code_to_weather(code: int, temp: float) -> str:
+    """
+    Convert a WMO weather code and temperature into a road condition
+    category: dry, rain, snow, or ice.
+    """
+
+    # Snow-related weather codes
     if code in (71, 73, 75, 77, 85, 86):
         return "snow"
-    #Ice
+    # Freezing rain / ice-related weather codes
     elif code in (56, 57, 66, 67):
         return "ice"
-    #rain or if below 2deg - ice
+    # Rain/freezing rain (when temperature is near 0 degrees Celsius)
     elif code in (51, 53, 55, 61, 63, 65, 80, 81, 82):
         if temp <= 2.0:
             return "ice"
