@@ -29,20 +29,48 @@ CUTIN_Y_TOL = 0.10
 
 # Utils
 def destroy_all_vehicles(world):
+    """Destroy all vehicles in current world instance
+    Args:
+        world (carla.World): the current world instance
+    Returns:
+        None
+    """
     for a in world.get_actors().filter('vehicle.*'):
         if a.is_alive:
             a.destroy()
 
 def speed_ms(vehicle):
+    """Return actor absolute speed in m/s.
+      Args:
+          vehicle (carla.Actor): the actor whose speed we want
+      Returns:
+          float: actor absolute speed in m/s
+      """
     v = vehicle.get_velocity()
     return math.sqrt(v.x**2 + v.y**2 + v.z**2)
 
 def speed_kph(vehicle):
+    """Return actor absolute speed in km/h.
+    Args:
+        vehicle (carla.Actor): the actor whose speed we want
+    Returns:
+        float: actor absolute speed in km/h
+    """
     v = vehicle.get_velocity()
     ms = math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
     return ms*3.6
 
 def apply_speed(vehicle, target_speed, steer = 0.0):
+    """Regulate speed of the vehicle
+    Car speed will be regulated by a simple PD regulator with a goal to reach target speed.
+
+    Args:
+        vehicle (carla.Actor): actor whose speed will be regulated
+        target_speed (float): target speed in km/h
+        steer (float): steering angle (0 by default)
+    Returns:
+        None
+    """
     target_speed = target_speed/3.6
     v = speed_ms(vehicle)
     delta = target_speed - v
@@ -72,6 +100,18 @@ def apply_speed(vehicle, target_speed, steer = 0.0):
     ))
 
 def steer_to_y(y_target, y_current, y_err_prev,  kp=0.1, kd=0.25, limit=0.14):
+    """Steer carla car until it reaches target y.
+    Args:
+        y_target (float): desired place on the road(y is the width of the road).
+        y_current (float): current place on the road.
+        y_err_prev (float): previous displacement error, helps to better regulate angle.
+        kp,kd,limit (float): regulator parameters.
+    Returns:
+        (tuple[float, float])
+        steer: steering angle to set to the car
+        y_err: difference between the desired and current y.
+
+    """
     y_err = y_target - y_current
     d_err = y_err - y_err_prev
     steer = kp * y_err + kd * d_err
@@ -81,6 +121,22 @@ def steer_to_y(y_target, y_current, y_err_prev,  kp=0.1, kd=0.25, limit=0.14):
 # Main
 
 def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
+    """Realistic overtake scenario with two vehicles, close to pedestrian crossing.
+
+    Spawns a slow and a fast vehicle on adjacent lanes. Scenario has
+    four phases: both cars cruise at the same speed,
+    the fast car accelerates to overtake, cuts into the slow lane ahead
+    of the slow car, then stabilizes its position.
+    Args:
+        world (carla.World): The CARLA simulation world object.
+        blueprint_library (carla.BlueprintLibrary): The blueprint library
+            available in the current CARLA world.
+        duration_sec (float, optional): Maximum scenario duration.
+        output_dir (str): unused
+
+    Returns:
+        None
+    """
     destroy_all_vehicles(world)
 
     bp_fast = blueprint_library.find('vehicle.dodge.charger_2020')

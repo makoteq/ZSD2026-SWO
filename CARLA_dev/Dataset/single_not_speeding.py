@@ -19,20 +19,48 @@ TARGET_MAX_KPH = 50.0
 
 # Utils
 def destroy_all_vehicles(world):
+    """Destroy all vehicles in current world instance
+    Args:
+        world (carla.World): the current world instance
+    Returns:
+        None
+    """
     for a in world.get_actors().filter('vehicle.*'):
         if a.is_alive:
             a.destroy()
 
 def speed_ms(vehicle):
+    """Return actor absolute speed in m/s.
+      Args:
+          vehicle (carla.Actor): the actor whose speed we want
+      Returns:
+          float: actor absolute speed in m/s
+      """
     v = vehicle.get_velocity()
     return math.sqrt(v.x**2 + v.y**2 + v.z**2)
 
 def speed_kph(vehicle):
+    """Return actor absolute speed in km/h.
+    Args:
+        vehicle (carla.Actor): the actor whose speed we want
+    Returns:
+        float: actor absolute speed in km/h
+    """
     v = vehicle.get_velocity()
     ms = math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
     return ms*3.6
 
 def apply_speed(vehicle, target_speed, steer = 0.0):
+    """Regulate speed of the vehicle
+    Car speed will be regulated by a simple PD regulator with a goal to reach target speed.
+
+    Args:
+        vehicle (carla.Actor): actor whose speed will be regulated
+        target_speed (float): target speed in km/h
+        steer (float): steering angle (0 by default)
+    Returns:
+        None
+    """
     target_speed = target_speed/3.6
     v = speed_ms(vehicle)
     delta = target_speed - v
@@ -64,6 +92,21 @@ def apply_speed(vehicle, target_speed, steer = 0.0):
 
 
 def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
+    """Run a single speeding vehicle scenario in CARLA.
+
+    Spawns one car on a randomly selected lane and drives it at a
+    constant randomized (legal) target speed until it reaches the end of the road.
+
+    Args:
+        world (carla.World): The CARLA simulation world object.
+       blueprint_library (carla.BlueprintLibrary): The blueprint library
+            available in the current CARLA world.
+       duration_sec (float, optional): Maximum scenario duration.
+       output_dir (str): unused
+
+    Returns:
+        None
+    """
     destroy_all_vehicles(world)
 
     v1_model = blueprint_library.find('vehicle.dodge.charger_2020')
@@ -109,4 +152,3 @@ def run(world, blueprint_library, duration_sec=30.0, output_dir=None):
             time.sleep(0.05)
     finally:
         destroy_all_vehicles(world)
-   
