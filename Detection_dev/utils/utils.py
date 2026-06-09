@@ -21,6 +21,19 @@ def drawCustomBox(
     speed: float,
     stoppingDistance: float,
 ) -> None:
+    """
+    Draws a custom bounding box and label for a detected car on the given frame.
+
+    Args:
+        annotatedFrame (np.ndarray): The image frame to draw on.
+        boxXyxy (np.ndarray): Bounding box coordinates [x1, y1, x2, y2].
+        trackId (int): Tracking ID of the car.
+        conf (float): Confidence score of the detection.
+        x (float): X position of the car in meters.
+        y (float): Y position of the car in meters.
+        speed (float): Speed of the car in m/s.
+        stoppingDistance (float): Calculated stopping distance of the car in meters.
+    """
     x1, y1, x2, y2 = map(int, boxXyxy)
     
     cv2.rectangle(annotatedFrame, (x1, y1), (x2, y2), BBOX_COLOR, LINE_THICKNESS)
@@ -46,6 +59,17 @@ import numpy as np
 from typing import List, Dict, Tuple, Any, Callable
 
 def getManualLaneLines(videoPath: str, display_scale: float = 1.0) -> List[Dict[str, float]]:
+    """
+    Allows the user to manually select 4 points on a video frame to define lane lines.
+
+    Args:
+        videoPath (str): Path to the video file to read the first frame from.
+        display_scale (float, optional): Scaling factor for the display window. Defaults to 1.0.
+
+    Returns:
+        List[Dict[str, float]]: A list of dictionaries, each containing slope ('m'), intercept ('b'),
+                                x-intercept at the bottom ('x_bot'), and absolute slope ('abs_m') for a lane line.
+    """
     points: List[Tuple[int, int]] = []
     windowName: str = "Select 4 points: 2 for Left Lane (Top, Bot), 2 for Right Lane (Top, Bot)"
     
@@ -109,6 +133,19 @@ def getManualLaneLines(videoPath: str, display_scale: float = 1.0) -> List[Dict[
     return detectedLines
 
 def plotRadarComparison(minX: float, maxX: float, minY: float, maxY: float, carsDict: Dict[int, Any], clusterCenters: List[Dict[str, Any]], frameIndex: int, currentTime: float) -> None:
+    """
+    Plots a 2D map comparing the positions of radar cluster centers and YOLO detected cars.
+
+    Args:
+        minX (float): Minimum X limit for the plot.
+        maxX (float): Maximum X limit for the plot.
+        minY (float): Minimum Y limit for the plot.
+        maxY (float): Maximum Y limit for the plot.
+        carsDict (Dict[int, Any]): Dictionary of detected Car objects.
+        clusterCenters (List[Dict[str, Any]]): List of clustered radar points.
+        frameIndex (int): The current frame index.
+        currentTime (float): The current simulation time in seconds.
+    """
     if not plt.fignum_exists(1):
         plt.figure(1, figsize=(8, 8))
     else:
@@ -162,6 +199,16 @@ PLOT_SIZE: Final[Tuple[int, int]] = (12, 8)
 RESOLUTION: Final[int] = 300
 
 def plotYOffsetCorrelation(csvPath: str) -> Callable[[float], float]:
+    """
+    Plots the correlation between radar Y position and positional Y offset, 
+    and returns a linear correction function.
+
+    Args:
+        csvPath (str): Path to the CSV file containing the data.
+
+    Returns:
+        Callable[[float], float]: A function that takes a radar Y position and returns the predicted Y offset.
+    """
     dataFrame = pd.read_csv(csvPath)
     
     validData = dataFrame[dataFrame['radar_frame'] == dataFrame['frame']].dropna(subset=['radar_pos_y', 'pos_diff_y'])
@@ -198,7 +245,15 @@ def plotYOffsetCorrelation(csvPath: str) -> Callable[[float], float]:
 
 
 def save_car_to_csv(car, trackId, frameIndex, csv_file="cars_data.csv"):
+    """
+    Saves the physical properties and offsets of a tracked car to a CSV file.
 
+    Args:
+        car (Car): The car object containing tracking data.
+        trackId (int): The tracking ID of the car.
+        frameIndex (int): The current frame index.
+        csv_file (str, optional): The path to the CSV file. Defaults to "cars_data.csv".
+    """
 
     if frameIndex == 0:
         with open(csv_file, "w", newline="") as f:
@@ -245,32 +300,17 @@ def save_car_to_csv(car, trackId, frameIndex, csv_file="cars_data.csv"):
 
 
 
-# TODO handle it via arg or smth , TO JEST FUNKCJ DO WYŚWITLANIA LINI 
-# Draw lines for testing
-
-# LANE_LINE_COLOR = (0, 200, 255)
-# LANE_LINE_THICKNESS = 2
-# y_top = 0
-# y_bottom = frameHeight - 1
-# for line in detected_lines:
-#     m = line.get('m')
-#     b = line.get('b')
-#     if m is None or b is None:
-#         continue
-
-#     x_top = int((m * y_top) + b)
-#     x_bottom = int((m * y_bottom) + b)
-#     cv2.line(
-#         annotatedFrame,
-#         (x_top, y_top),
-#         (x_bottom, y_bottom),
-#         LANE_LINE_COLOR,
-#         LANE_LINE_THICKNESS,
-#     )
-
-
 def detectOvertaking(prevRanking: List[int], currentRanking: List[int],) -> List[Tuple[int, int]]:
-   # return list of tuples (overtaker_id, overtaken_id) for cars that changed order between prevRanking and currentRanking
+    """
+    Detects which cars have overtaken other cars between two frames.
+
+    Args:
+        prevRanking (List[int]): The ordered list of car IDs in the previous frame, ranked by depth.
+        currentRanking (List[int]): The ordered list of car IDs in the current frame, ranked by depth.
+
+    Returns:
+        List[Tuple[int, int]]: A list of tuples (overtaker_id, overtaken_id) representing overtakes.
+    """
     if len(prevRanking) < 2 or len(currentRanking) < 2:
         return []
 
