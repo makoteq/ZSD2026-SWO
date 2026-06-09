@@ -4,7 +4,6 @@ import random
 import os
 import math
 
-#--------------------------------------------------------configuration--------------------------------------------------
 # Lane and spawn configuration
 LANE_A_Y = 109.3
 LANE_B_Y = 105.7
@@ -24,18 +23,26 @@ SPAWN_DELAY_MAX = 3.5
 MIN_GAP_SAME_LANE_M = 15.0
 SAFE_DISTANCE_M = 12.0
 
-#-----------------------------------------------------------------------------------------------------------------------
-# Filter to only select passenger cars
+
 def get_random_car_blueprint(blueprint_library):
-    """Return a random passenger car blueprint, excluding bikes, vans, and trucks."""
+    """Return a filtered car blueprint from CARLA blueprint library.
+    Filters all 'vehicle' blueprints in bp lib and selects only passenger cars
+    (no bikes, big vans, wheelchairs etc.)
+    Args:
+        blueprint_library (carla.blueprint_library) - blueprint library
+        from the current instance of CARLA world.
+    Returns:
+        carla.ActorBlueprint - the chosen car blueprint
+    Raises:
+        RuntimeError ("no cars?") - if there is no blueprint library or its empty
+        or no car matches the restrictions.
+    """
     cars = []
     for bp in blueprint_library.filter("vehicle.*"):
-        # Exclude bikes, wheelchairs etc.
         if bp.has_attribute("base_type"):
             if bp.get_attribute("base_type").as_str() != "car":
                 continue
         bid = bp.id.lower()
-        # Exclude big vans
         excluding = ["firetruck", "ambulance", "bus", "truck", "van", "carlacola", "sprinter"]
         if any(x in bid for x in excluding):
             continue
@@ -46,13 +53,33 @@ def get_random_car_blueprint(blueprint_library):
 
 
 def get_speed_ms(actor):
-    """Return the current speed of an actor in m/s."""
+    """Return actor absolute speed in m/s.
+    Args:
+        actor (carla.Actor) - the actor whose speed we want
+    Returns:
+        float - actor absolute speed in m/s
+    """
     v = actor.get_velocity()
     return math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
 
 
 def run(world, blueprint_library, duration_sec=120.0, output_dir=None):
-    """Spawn and regulate normal traffic for duration_sec seconds, then save spawn count."""
+    """Run normal_traffic scenario .
+    Keeps spawning random vehicles on both lanes, regulates their speed
+    so that there are no collisions, cars maintain a safe distance from each other.
+    Writes total number of spawned vehicles into txt file for metrics.
+    Destroys all vehicles at the end.
+
+    Args:
+        world (carla.World) - the world to run the scenario.
+        blueprint_library (carla.blueprint_library): - the blueprint library
+            used by the get_random_car_blueprint function.
+        duration_sec (float) - how long to run the scenario.
+        output_dir (str) - the directory to save metrics.
+
+    Returns:
+        None
+    """
     spawned_count = 0
     active_vehicles_data = []
 
@@ -157,6 +184,6 @@ def run(world, blueprint_library, duration_sec=120.0, output_dir=None):
 
         log_dir = output_dir if output_dir else "."
         os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, "spawn_count.txt") #dla Vlada do metryk
+        log_path = os.path.join(log_dir, "spawn_count.txt")
         with open(log_path, "w", encoding="utf-8") as f:
             f.write(str(spawned_count))
