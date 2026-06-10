@@ -1,10 +1,26 @@
+import itertools
 import cv2
 import numpy as np
 
+
 class LaneDetector:
+    """A lane detection system using computer vision techniques.
+
+    This class processes road images using color thresholding, adaptive
+    thresholding, Hough transform, and line fitting to detect and categorize
+    lane boundaries.
+    """
+
     def __init__(self, config=None):
+        """Initializes the lane detector with default or custom configuration
+
+        parameters.
+
+        Args:
+            config (dict, optional): Custom configuration parameters to override
+              defaults.
+        """
         self.config = {
-            'yolo_conf': 0.25,
             'crop_top': 0.1,
             'adapt_block_size': 81,
             'adapt_c': -15,
@@ -22,22 +38,57 @@ class LaneDetector:
             self.config.update(config)
 
     def scale_params(self, image):
+        """Scales pixel-based threshold and tolerance parameters based on the
+
+        image dimensions.
+
+        Args:
+            image (numpy.ndarray): The input road image.
+        """
         height, width = image.shape[:2]
         diagonal = np.sqrt(width**2 + height**2)
 
-        self.config['hough_threshold'] = int(self.config['hough_threshold_percentage'] * diagonal)
-        self.config['hough_min_length'] = int(self.config['hough_min_length_percentage'] * diagonal)
-        self.config['hough_max_gap'] = int(self.config['hough_max_gap_percentage'] * diagonal)
-        self.config['vp_tolerance'] = int(self.config['vp_tolerance_percentage'] * diagonal)
+        self.config['hough_threshold'] = int(
+            self.config['hough_threshold_percentage'] * diagonal
+        )
+        self.config['hough_min_length'] = int(
+            self.config['hough_min_length_percentage'] * diagonal
+        )
+        self.config['hough_max_gap'] = int(
+            self.config['hough_max_gap_percentage'] * diagonal
+        )
+        self.config['vp_tolerance'] = int(
+            self.config['vp_tolerance_percentage'] * diagonal
+        )
 
     def crop_image(self, image):
+        """Crops the top portion of the image to define a Region of Interest
+
+        (ROI).
+
+        Args:
+            image (numpy.ndarray): The input road image.
+
+        Returns:
+            numpy.ndarray: The cropped region of interest (ROI) of the image.
+        """
         h = image.shape[0]
         crop_h = int(h * self.config['crop_top'])
         res = image[crop_h:, :]
         return res
 
     def get_adaptive_mask(self, img):
-        height, width = img.shape[:2]
+        """Generates a binary mask of lane candidates using color filters,
+
+        adaptive thresholding, and morphological operations.
+
+        Args:
+            img (numpy.ndarray): The cropped road image (BGR format).
+
+        Returns:
+            numpy.ndarray: A binary mask indicating potential lane pixels.
+        """
+        _, width = img.shape[:2]
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
@@ -54,26 +105,34 @@ class LaneDetector:
         if mean_brightness > 200:
             p98 = np.percentile(gray, 98)
             thresh_val = p98 - 6
-            _, paint_mask = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY)
+            _, paint_mask = cv2.threshold(
+                gray, thresh_val, 255, cv2.THRESH_BINARY
+            )
 
             kernel_width = int(width * 0.15)
             horizontal_kernel = np.ones((1, kernel_width), np.uint8)
 
-            glare_blobs = cv2.morphologyEx(paint_mask, cv2.MORPH_OPEN, horizontal_kernel)
+            glare_blobs = cv2.morphologyEx(
+                paint_mask, cv2.MORPH_OPEN, horizontal_kernel
+            )
             lines_only = cv2.bitwise_xor(paint_mask, glare_blobs)
 
-            white_mask = cv2.morphologyEx(lines_only, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+            white_mask = cv2.morphologyEx(
+                lines_only, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)
+            )
         else:
             blur = cv2.GaussianBlur(gray, (11, 11), 0)
             white_mask = cv2.adaptiveThreshold(
-                blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
+                blur,
+                255,
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY,
                 self.config['adapt_block_size'],
-                self.config['adapt_c']
+                self.config['adapt_c'],
             )
 
         combined_paint_mask = cv2.bitwise_or(white_mask, yellow_mask)
         raw_mask = cv2.bitwise_or(combined_paint_mask, pure_white_mask)
-
 
         stencil_mask = np.zeros_like(raw_mask)
 
@@ -83,7 +142,7 @@ class LaneDetector:
             np.pi / 180,
             threshold=self.config['hough_threshold'],
             minLineLength=self.config['hough_min_length'],
-            maxLineGap=self.config['hough_max_gap']
+            maxLineGap=self.config['hough_max_gap'],
         )
 
         if lines is not None:
@@ -101,10 +160,25 @@ class LaneDetector:
         original_pixels_kept = cv2.bitwise_and(raw_mask, stencil_mask)
 
         kernel_dilate = np.ones((5, 5), np.uint8)
-        final_mask = cv2.dilate(original_pixels_kept, kernel_dilate, iterations=1)
+        final_mask = cv2.dilate(
+            original_pixels_kept, kernel_dilate, iterations=1
+        )
         return final_mask
 
     def get_math_lines(self, paint_mask):
+        """Extracts mathematical line equations from a binary lane mask.
+
+        Applies Hough transform, filters lines by slope, groups duplicates,
+        fits lines using the Huber loss algorithm, and evaluates combinations
+        for vanishing point convergence.
+
+        Args:
+            paint_mask (numpy.ndarray): Binary mask containing lane markers.
+
+        Returns:
+            list: List of dictionaries containing line parameters ('m', 'b',
+            'weight', etc.).
+        """
         height, width = paint_mask.shape
 
         lines = cv2.HoughLinesP(
@@ -113,7 +187,7 @@ class LaneDetector:
             theta=np.pi / 180,
             threshold=self.config['hough_threshold'],
             minLineLength=self.config['hough_min_length'],
-            maxLineGap=self.config['hough_max_gap']
+            maxLineGap=self.config['hough_max_gap'],
         )
 
         if lines is None:
@@ -144,8 +218,11 @@ class LaneDetector:
                 pts.append((px, py))
 
             candidates.append({
-                'm': m_inv, 'b': b_inv, 'weight': length, 'x_bot': x_bottom,
-                'pts': pts
+                'm': m_inv,
+                'b': b_inv,
+                'weight': length,
+                'x_bot': x_bottom,
+                'pts': pts,
             })
 
         unique_lines = []
@@ -157,7 +234,10 @@ class LaneDetector:
 
             for ul in unique_lines:
                 ul_x = ul['m'] * y_eval + ul['b']
-                if abs(cand_x - ul_x) < width * 0.04 and abs(cand['m'] - ul['m']) < 0.15:
+                if (
+                    abs(cand_x - ul_x) < width * 0.04
+                    and abs(cand['m'] - ul['m']) < 0.15
+                ):
                     is_duplicate = True
                     ul['weight'] += cand['weight']
                     ul['pts'].extend(cand['pts'])
@@ -170,9 +250,13 @@ class LaneDetector:
             return unique_lines
 
         for ul in unique_lines:
-            pts_array = np.array(ul['pts'], dtype=np.float32).reshape((-1, 1, 2))
+            pts_array = np.array(ul['pts'], dtype=np.float32).reshape(
+                (-1, 1, 2)
+            )
 
-            [vx, vy, x0, y0] = cv2.fitLine(pts_array, cv2.DIST_HUBER, 0, 0.01, 0.01)
+            [vx, vy, x0, y0] = cv2.fitLine(
+                pts_array, cv2.DIST_HUBER, 0, 0.01, 0.01
+            )
 
             if vy[0] != 0:
                 new_m = vx[0] / vy[0]
@@ -187,7 +271,6 @@ class LaneDetector:
 
         unique_lines.sort(key=lambda x: x['weight'], reverse=True)
 
-        import itertools
         best_combo = None
         best_combo_score = 0
         best_fallback_duo = [unique_lines[0], unique_lines[1]]
@@ -196,7 +279,9 @@ class LaneDetector:
 
         if len(unique_lines) >= 3:
             for combo in itertools.combinations(unique_lines, 3):
-                combo_sorted = sorted(combo, key=lambda x: x['weight'], reverse=True)
+                combo_sorted = sorted(
+                    combo, key=lambda x: x['weight'], reverse=True
+                )
                 l1, l2, l3 = combo_sorted[0], combo_sorted[1], combo_sorted[2]
 
                 x1 = l1['m'] * y_eval + l1['b']
@@ -207,8 +292,11 @@ class LaneDetector:
                 dist13 = abs(x1 - x3)
                 dist23 = abs(x2 - x3)
 
-
-                if dist12 < min_dist or dist13 < min_dist or dist23 < min_dist:
+                if (
+                    dist12 < min_dist
+                    or dist13 < min_dist
+                    or dist23 < min_dist
+                ):
                     continue
 
                 dm = l1['m'] - l2['m']
@@ -246,6 +334,20 @@ class LaneDetector:
             return best_fallback_duo
 
     def classify_line_type(self, line, paint_mask):
+        """Classifies a detected lane line as 'solid' or 'dashed'.
+
+        Evaluates the density of active pixels along the line's path in the
+        binary mask.
+
+        Args:
+            line (dict): Dictionary representing the line parameters (containing
+              slope 'm' and intercept 'b').
+            paint_mask (numpy.ndarray): Binary mask containing lane markers.
+
+        Returns:
+            str: 'solid' if pixel density is above threshold, otherwise
+            'dashed'.
+        """
         height, width = paint_mask.shape
         m = line['m']
         b = line['b']
@@ -282,6 +384,19 @@ class LaneDetector:
             return 'dashed'
 
     def format_full_image_lines(self, lines, original_height):
+        """Transforms line equations from cropped ROI coordinates to full image
+
+        coordinates.
+
+        Args:
+            lines (list): List of line dictionaries in cropped coordinate
+              space.
+            original_height (int): Height of the original (uncropped) image.
+
+        Returns:
+            list: Formatted lines with start/end points mapped to full-scale
+            image dimensions.
+        """
         formatted_lines = []
         crop_h = int(original_height * self.config['crop_top'])
 
@@ -302,12 +417,24 @@ class LaneDetector:
                 'b': float(b_full),
                 'start': [int(x_start), int(y_start)],
                 'end': [int(x_end), int(y_end)],
-                'type': str(line.get('type', 'solid'))
+                'type': str(line.get('type', 'solid')),
             })
 
         return formatted_lines
 
     def draw_lines(self, original_img, lines_dict):
+        """Draws the detected lanes onto a copy of the original image.
+
+        Solid lines are drawn in green, and dashed lines are drawn in red.
+
+        Args:
+            original_img (numpy.ndarray): The source image.
+            lines_dict (dict): Dictionary of categorized lines (e.g.,
+              'left_line', 'right_line').
+
+        Returns:
+            numpy.ndarray: Image copy with rendered lane overlay.
+        """
         result_img = original_img.copy()
 
         for key, line in lines_dict.items():
@@ -328,6 +455,19 @@ class LaneDetector:
         return result_img
 
     def detect(self, image):
+        """Executes the full lane detection pipeline on an input image.
+
+        Processes the image through parameter scaling, cropping, binary mask
+        generation, mathematical line extraction, type classification, mapping,
+        and categorization.
+
+        Args:
+            image (numpy.ndarray): Input road image (BGR format).
+
+        Returns:
+            dict: Categorized lane dictionaries (e.g., 'left_line',
+            'middle_line', 'right_line').
+        """
         self.scale_params(image)
         cropped_img = self.crop_image(image)
         mask = self.get_adaptive_mask(cropped_img)
